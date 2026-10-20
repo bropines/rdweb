@@ -11,5 +11,10 @@ proto/*.proto are written for this project. They declare only the messages
 rdweb uses, with field numbers and types matching the protocol for
 interoperability. No RustDesk source code is included.
 
+src/react/ui/* are adapted from shadcn/ui (MIT, https://ui.shadcn.com).
+dist/react/style.css is generated with Tailwind CSS and includes a scoped
+subset of its preflight (MIT, Tailwind Labs). The React UI was moved here
+from RD Panel (MIT, same authors).
+
 Third-party npm packages are distributed under their own licenses; see
 package.json and their LICENSE files.
