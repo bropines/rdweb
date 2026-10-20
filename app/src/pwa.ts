@@ -151,3 +151,17 @@ export async function promptInstall(): Promise<boolean> {
   const choice = await e.userChoice?.catch(() => null);
   return choice?.outcome === "accepted";
 }
+
+/**
+ * Puts the manifest link back when something removed it from the HTML: ad
+ * blockers with HTTPS filtering (AdGuard on Android) strip
+ * `<link rel="manifest">`, and Chrome then cannot install the app. A link
+ * added from script is picked up by Chrome all the same.
+ */
+export function ensureManifestLink(): void {
+  if (typeof document === "undefined" || document.querySelector('link[rel="manifest"]')) return;
+  const link = document.createElement("link");
+  link.rel = "manifest";
+  link.href = `${import.meta.env.BASE_URL}manifest.webmanifest`;
+  document.head.appendChild(link);
+}
