@@ -84,7 +84,7 @@ class FakeSocket {
 
   /** Peer -> client, encrypted once the key is set. */
   peerSend(init: Parameters<typeof create<typeof MessageSchema>>[1]): void {
-    let bytes = toBinary(MessageSchema, create(MessageSchema, init));
+    let bytes: Uint8Array = toBinary(MessageSchema, create(MessageSchema, init));
     if (this.key) {
       this.sendSeq++;
       bytes = nacl.secretbox(bytes, this.nonce(this.sendSeq), this.key);
