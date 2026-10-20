@@ -37,10 +37,13 @@
   "scripts": {
     "gen": "buf generate",
     "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/build-css.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p app/tsconfig.json --noEmit",
     "test": "vitest run",
     "dev": "vite demo --config demo/vite.config.ts",
     "build:demo": "vite build demo --config demo/vite.config.ts",
+    "dev:app": "vite --config app/vite.config.ts",
+    "build:app": "vite build --config app/vite.config.ts",
+    "preview:app": "vite preview --config app/vite.config.ts",
     "prepack": "npm run build"
   },
   "dependencies": {

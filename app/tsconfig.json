@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "node"],
+    "paths": {
+      "rdweb": ["../src/index.ts"],
+      "rdweb/react": ["../src/react/index.ts"],
+      "@ui/*": ["../src/react/ui/*"]
+    }
+  },
+  "include": ["src", "vite.config.ts", "../test/app"],
+  "exclude": []
+}
