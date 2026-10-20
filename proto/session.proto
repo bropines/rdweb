@@ -34,12 +34,23 @@ message OSLogin {
   string password = 2;
 }
 
+// Asks for a file transfer session; `dir` is the folder to list first (empty:
+// the remote user's home).
+message FileTransfer {
+  string dir = 1;
+  bool show_hidden = 2;
+}
+
 message LoginRequest {
   string username = 1;
   bytes password = 2;
   string my_id = 4;
   string my_name = 5;
   OptionMessage option = 6;
+  // Which kind of session is wanted; unset means remote desktop.
+  oneof union {
+    FileTransfer file_transfer = 7;
+  }
   bool video_ack_required = 9;
   uint64 session_id = 10;
   string version = 11;
@@ -543,6 +554,168 @@ message Misc {
   }
 }
 
+// ----------------------------------------------------------- file transfer
+//
+// Jobs are numbered by the client (`id`, never 0: listings without a job use
+// 0). `file_num` indexes the job's file list as announced in FileDirectory.
+// Sizes are bytes, times are seconds since the Unix epoch.
+
+enum FileType {
+  Dir = 0;
+  DirLink = 2;
+  DirDrive = 3;
+  File = 4;
+  FileLink = 5;
+}
+
+message FileEntry {
+  FileType entry_type = 1;
+  // Plain name in a listing; a path relative to the job root in a job's file list.
+  string name = 2;
+  bool is_hidden = 3;
+  uint64 size = 4;
+  uint64 modified_time = 5;
+}
+
+// A listing (id 0) or the file list of a transfer/removal job.
+message FileDirectory {
+  int32 id = 1;
+  string path = 2;
+  repeated FileEntry entries = 3;
+}
+
+message ReadDir {
+  string path = 1;
+  bool include_hidden = 2;
+}
+
+// Lists every regular file below `path` (recursively) as a job file list.
+message ReadAllFiles {
+  int32 id = 1;
+  string path = 2;
+  bool include_hidden = 3;
+}
+
+message FileRename {
+  int32 id = 1;
+  string path = 2;
+  string new_name = 3;
+}
+
+// Asks the other side to send `path` (a file or a whole folder) as job `id`.
+message FileTransferSendRequest {
+  int32 id = 1;
+  string path = 2;
+  bool include_hidden = 3;
+  int32 file_num = 4;
+  enum FileType {
+    Generic = 0;
+    Printer = 1;
+  }
+  FileType file_type = 5;
+}
+
+// Announces `files` (sent next as job `id`), to be written below `path`.
+message FileTransferReceiveRequest {
+  int32 id = 1;
+  string path = 2;
+  repeated FileEntry files = 3;
+  int32 file_num = 4;
+  uint64 total_size = 5;
+}
+
+// Answer to a digest: skip the file, or send it starting at a byte offset.
+message FileTransferSendConfirmRequest {
+  int32 id = 1;
+  sint32 file_num = 2;
+  oneof union {
+    bool skip = 3;
+    uint32 offset_blk = 4;
+  }
+}
+
+message FileTransferCancel { int32 id = 1; }
+
+message FileDirCreate {
+  int32 id = 1;
+  string path = 2;
+}
+
+// recursive: also drop empty sub-folders and links (regular files must be
+// removed first).
+message FileRemoveDir {
+  int32 id = 1;
+  string path = 2;
+  bool recursive = 3;
+}
+
+message FileRemoveFile {
+  int32 id = 1;
+  string path = 2;
+  sint32 file_num = 3;
+}
+
+message FileAction {
+  oneof union {
+    ReadDir read_dir = 1;
+    FileTransferSendRequest send = 2;
+    FileTransferReceiveRequest receive = 3;
+    FileDirCreate create = 4;
+    FileRemoveDir remove_dir = 5;
+    FileRemoveFile remove_file = 6;
+    ReadAllFiles all_files = 7;
+    FileTransferCancel cancel = 8;
+    FileTransferSendConfirmRequest send_confirm = 9;
+    FileRename rename = 10;
+  }
+}
+
+// Sent by the side holding a file before its data, so the receiving side can
+// detect an existing copy; the receiving side answers with a digest of its
+// own copy (is_upload, is_identical, transferred_size for a partial one) or
+// directly with a send confirmation.
+message FileTransferDigest {
+  int32 id = 1;
+  sint32 file_num = 2;
+  uint64 last_modified = 3;
+  uint64 file_size = 4;
+  bool is_upload = 5;
+  bool is_identical = 6;
+  uint64 transferred_size = 7;
+  bool is_resume = 8;
+}
+
+// A chunk of file `file_num`; an empty chunk marks the end of that file.
+message FileTransferBlock {
+  int32 id = 1;
+  sint32 file_num = 2;
+  bytes data = 3;
+  // zstd compressed
+  bool compressed = 4;
+  uint32 blk_id = 5;
+}
+
+message FileTransferError {
+  int32 id = 1;
+  string error = 2;
+  sint32 file_num = 3;
+}
+
+message FileTransferDone {
+  int32 id = 1;
+  sint32 file_num = 2;
+}
+
+message FileResponse {
+  oneof union {
+    FileDirectory dir = 1;
+    FileTransferBlock block = 2;
+    FileTransferError error = 3;
+    FileTransferDone done = 4;
+    FileTransferDigest digest = 5;
+  }
+}
+
 // ------------------------------------------------------------------ envelope
 
 message Message {
@@ -561,6 +734,8 @@ message Message {
     uint64 cursor_id = 14 [jstype = JS_STRING];
     KeyEvent key_event = 15;
     Clipboard clipboard = 16;
+    FileAction file_action = 17;
+    FileResponse file_response = 18;
     Misc misc = 19;
     MessageBox message_box = 21;
     PeerInfo peer_info = 25;
