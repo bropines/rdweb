@@ -256,6 +256,13 @@ repository (`app/`): add a server, enter a device id, connect.
   inside the encrypted session; "remember password" keeps a salted hash, not
   the password, in this browser. Servers and settings stay in localStorage.
 
+- **Install and offline**: the page is an installable web app (the header's
+  Install button in Chromium browsers; Share → Add to Home Screen on iOS and
+  iPadOS; File → Add to Dock in Safari 17+ on macOS). A service worker keeps
+  the app itself, so it opens without a connection to GitHub Pages; reaching
+  devices still needs your server. A new deploy shows a "Reload" prompt.
+  Icons come from `app/public/favicon.svg` (`node scripts/gen-app-icons.mjs`).
+
 English and Russian, light/dark/system theme, phone layouts. The
 [pages workflow](.github/workflows/pages.yml) deploys it on every push to
 `main`.

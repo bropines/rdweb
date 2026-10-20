@@ -34,7 +34,8 @@ export function useTheme(): { theme: ThemeChoice; setTheme: (t: ThemeChoice) => 
     const root = document.documentElement;
     root.classList.toggle("dark", dark);
     root.style.colorScheme = dark ? "dark" : "light";
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#09090b" : "#ffffff");
+    // index.html has one per colour scheme for the first paint; both follow the choice
+    for (const meta of document.querySelectorAll('meta[name="theme-color"]')) meta.setAttribute("content", dark ? "#09090b" : "#ffffff");
   }, [dark]);
 
   const setTheme = (t: ThemeChoice) => {

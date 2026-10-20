@@ -1,5 +1,5 @@
 // Set by app/vite.config.ts at build time.
-declare const __RDWEB_BUILD__: { version: string; commit: string; date: string };
+declare const __RDWEB_BUILD__: { version: string; commit: string; date: string; id: string };
 
 export const BUILD = __RDWEB_BUILD__;
 export const SHORT_COMMIT = BUILD.commit.slice(0, 7);

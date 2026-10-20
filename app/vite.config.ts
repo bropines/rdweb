@@ -18,11 +18,11 @@ function gitCommit(): string {
     return "";
   }
 }
-const BUILD = {
-  version: (JSON.parse(readFileSync(at("../package.json"), "utf8")) as { version: string }).version,
-  commit: gitCommit(),
-  date: new Date().toISOString().slice(0, 10),
-};
+const version = (JSON.parse(readFileSync(at("../package.json"), "utf8")) as { version: string }).version;
+const commit = gitCommit();
+const date = new Date().toISOString().slice(0, 10);
+// `id` names the service worker's cache; the page compares it with a waiting worker.
+const BUILD = { version, commit, date, id: `${version}-${commit.slice(0, 12) || date}` };
 
 // Production builds only (the dev server needs inline scripts): the page may
 // talk to the configured servers over WebSocket and load nothing else.
@@ -46,12 +46,43 @@ function contentSecurityPolicy(): Plugin {
   };
 }
 
+// The service worker (app/sw.js) for installs and offline starts, tied to this
+// build: its cache is named after BUILD.id and it precaches the app shell
+// (index.html and what it loads up front). Lazy chunks (xterm.js, the terminal
+// font, the Opus decoder) are cached when first used.
+function serviceWorker(): Plugin {
+  return {
+    name: "rdweb-app-sw",
+    apply: "build",
+    enforce: "post",
+    generateBundle(_options, bundle) {
+      const shell = new Set<string>();
+      const add = (name: string) => {
+        const file = bundle[name];
+        if (!file || shell.has(name)) return;
+        shell.add(name);
+        if (file.type !== "chunk") return;
+        file.imports.forEach(add);
+        file.viteMetadata?.importedCss.forEach(add);
+        file.viteMetadata?.importedAssets.forEach(add);
+      };
+      for (const file of Object.values(bundle)) if (file.type === "chunk" && file.isEntry) add(file.fileName);
+      if (shell.size === 0) this.error("service worker: no entry chunk to precache");
+      const precache = ["./", "favicon.svg", ...[...shell].sort()];
+      const template = readFileSync(at("./sw.js"), "utf8");
+      const source = template.replace('"__RDWEB_SW_VERSION__"', JSON.stringify(BUILD.id)).replace('["__RDWEB_PRECACHE__"]', JSON.stringify(precache));
+      if (source.includes("__RDWEB_")) this.error("service worker: placeholders in app/sw.js were not replaced");
+      this.emitFile({ type: "asset", fileName: "sw.js", source });
+    },
+  };
+}
+
 // The standalone web client, built from the library sources (no npm package).
 // GitHub Pages serves it at https://bropines.github.io/rdweb/.
 export default defineConfig({
   root: at("."),
   base: "/rdweb/",
-  plugins: [react(), contentSecurityPolicy()],
+  plugins: [react(), contentSecurityPolicy(), serviceWorker()],
   define: { __RDWEB_BUILD__: JSON.stringify(BUILD) },
   resolve: {
     alias: [
