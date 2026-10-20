@@ -324,7 +324,8 @@ export class Viewer {
   private onDisplay(d: DisplayRect): void {
     this.cursorCssCache.clear();
     const inside = this.curX >= d.x && this.curX < d.x + d.width && this.curY >= d.y && this.curY < d.y + d.height;
-    if (!inside && this.inputMode !== "mouse") this.centerCursor();
+    if ((!inside || !this.haveCursorPos) && this.inputMode !== "mouse") this.centerCursor();
+    this.applyCursorShape();
     this.layout();
     this.positionCursor();
   }
@@ -440,7 +441,11 @@ export class Viewer {
   private cursorUnit(): number {
     const d = this.session.display;
     const f = this.baseW / (d?.width || this.remoteSize().w || 1);
-    return this.zoomCursor || this.inputMode !== "mouse" ? f : 1 / this.zoom;
+    if (this.zoomCursor) return f;
+    // Touch modes draw the cursor with the remote screen, but never smaller
+    // than 3/4 of its native size so it stays visible on phones.
+    if (this.inputMode !== "mouse") return Math.max(f, 0.75 / this.zoom);
+    return 1 / this.zoom;
   }
 
   /** Whether the remote cursor is drawn as an element instead of the local pointer. */
