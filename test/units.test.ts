@@ -6,6 +6,8 @@ import { MessageSchema } from "../src/proto/session_pb.js";
 import { StreamCipher, loginProof, rememberedPasswordHash } from "../src/crypto.js";
 import { mapCode, peerOsFromPlatform } from "../src/keymap.js";
 import { inflateCapped, inflateExact } from "../src/zstd.js";
+import { classifyPeerError } from "../src/files/job.js";
+import { baseNameRemote, joinRemote, parentRemote, safeRelativeSegments } from "../src/files/paths.js";
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
 
@@ -19,6 +21,32 @@ describe("wire format", () => {
     );
     // field 8 (len) { 1:"12", 2:varint 2, 3:"k" }
     expect(hex(bytes)).toBe("42090a02313210021a016b");
+  });
+
+  it("encodes file transfer messages byte-compatibly", () => {
+    const enc = (init: Parameters<typeof create<typeof MessageSchema>>[1]) => hex(toBinary(MessageSchema, create(MessageSchema, init)));
+    // login_request(7) { file_transfer(7) { dir(1): "a" } }
+    expect(enc({ union: { case: "loginRequest", value: { union: { case: "fileTransfer", value: { dir: "a" } } } } })).toBe(
+      "3a053a030a0161",
+    );
+    // file_action(17) { send_confirm(9) { id 1, file_num sint32 2, skip true } }
+    expect(
+      enc({
+        union: {
+          case: "fileAction",
+          value: { union: { case: "sendConfirm", value: { id: 1, fileNum: 2, union: { case: "skip", value: true } } } },
+        },
+      }),
+    ).toBe("8a01084a060801100418" + "01");
+    // file_response(18) { block(2) { id 1, data 0102, compressed true } }
+    expect(
+      enc({
+        union: {
+          case: "fileResponse",
+          value: { union: { case: "block", value: { id: 1, data: new Uint8Array([1, 2]), compressed: true } } },
+        },
+      }),
+    ).toBe("92010a120808011a0201022001");
   });
 
   it("encodes a mouse event with zigzag coordinates", () => {
@@ -76,5 +104,49 @@ describe("zstd", () => {
     expect(() => inflateExact(z, 999)).toThrow();
     const bomb = new Uint8Array(zstdCompressSync(new Uint8Array(50_000_000)));
     expect(() => inflateCapped(bomb, 1 << 20)).toThrow();
+  });
+});
+
+describe("remote paths", () => {
+  it("joins and splits POSIX paths", () => {
+    expect(joinRemote("/home/a", "b.txt", "/")).toBe("/home/a/b.txt");
+    expect(joinRemote("/", "etc", "/")).toBe("/etc");
+    expect(parentRemote("/home/a", "/")).toBe("/home");
+    expect(parentRemote("/home", "/")).toBe("/");
+    expect(parentRemote("/", "/")).toBe("/");
+    expect(baseNameRemote("/home/a/", "/")).toBe("a");
+  });
+
+  it("handles Windows drives and separators", () => {
+    expect(joinRemote("/", "D:", "\\")).toBe("D:\\");
+    expect(joinRemote("C:\\", "Users", "\\")).toBe("C:\\Users");
+    expect(joinRemote("C:\\Users", "bob", "\\")).toBe("C:\\Users\\bob");
+    expect(parentRemote("C:\\Users\\bob", "\\")).toBe("C:\\Users");
+    expect(parentRemote("C:\\Users", "\\")).toBe("C:\\");
+    expect(parentRemote("C:\\", "\\")).toBe("/");
+    expect(baseNameRemote("C:\\Users\\bob", "\\")).toBe("bob");
+    expect(baseNameRemote("D:\\", "\\")).toBe("D:");
+  });
+
+  it("refuses relative names that leave the target folder", () => {
+    expect(safeRelativeSegments("a\\b/./c.txt")).toEqual(["a", "b", "c.txt"]);
+    for (const bad of ["../x", "a/../../x", "/etc/passwd", "\\\\srv\\share", "C:\\x", "a\0b"]) {
+      expect(() => safeRelativeSegments(bad), bad).toThrow();
+    }
+  });
+
+  it("classifies peer error texts", () => {
+    expect(classifyPeerError("No such file or directory (os error 2)")).toBe("not-found");
+    expect(classifyPeerError("The system cannot find the path specified. (os error 3)")).toBe("not-found");
+    expect(classifyPeerError("\"/x\" not exists")).toBe("not-found");
+    expect(classifyPeerError("Access is denied. (os error 5)")).toBe("permission-denied");
+    expect(classifyPeerError("Permission denied")).toBe("permission-denied");
+    expect(classifyPeerError("Directory not empty (os error 39)")).toBe("not-empty");
+    expect(classifyPeerError("The directory is not empty. (os error 145)")).toBe("not-empty");
+    expect(classifyPeerError("File exists (os error 17)")).toBe("exists");
+    expect(classifyPeerError("one-way-file-transfer-tip")).toBe("one-way");
+    expect(classifyPeerError("file transfer rejected: too many files (20000 files exceeds limit of 10000)")).toBe("too-many-files");
+    expect(classifyPeerError("path traversal detected in file name")).toBe("invalid-name");
+    expect(classifyPeerError("disk on fire")).toBe("remote");
   });
 });
