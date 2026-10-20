@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { create, toBinary } from "@bufbuild/protobuf";
-import { zstdCompressSync } from "node:zlib";
+import { constants as zlibConstants, zstdCompressSync } from "node:zlib";
 import { NatType, RendezvousMessageSchema } from "../src/proto/rendezvous_pb.js";
 import { MessageSchema } from "../src/proto/session_pb.js";
 import { StreamCipher, loginProof, rememberedPasswordHash } from "../src/crypto.js";
@@ -104,6 +104,25 @@ describe("zstd", () => {
     expect(() => inflateExact(z, 999)).toThrow();
     const bomb = new Uint8Array(zstdCompressSync(new Uint8Array(50_000_000)));
     expect(() => inflateCapped(bomb, 1 << 20)).toThrow();
+  });
+
+  it("refuses frames whose window the decoder would have to allocate up front", () => {
+    // magic, no single segment, window 2^30, then one empty last raw block
+    const hugeWindow = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x00, (30 - 10) << 3, 0x01, 0x00, 0x00]);
+    expect(() => inflateCapped(hugeWindow, 1 << 20)).toThrow(/window/);
+    // same frame with a 1 MiB window is fine
+    const ok = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x00, (20 - 10) << 3, 0x01, 0x00, 0x00]);
+    expect(inflateCapped(ok, 1 << 20).length).toBe(0);
+    expect(() => inflateCapped(hugeWindow.subarray(0, 7), 1 << 20)).toThrow();
+  });
+
+  it("walks checksummed and concatenated frames", () => {
+    const a = new Uint8Array(zstdCompressSync(new Uint8Array(3000).fill(1), { params: { [zlibConstants.ZSTD_c_checksumFlag]: 1 } }));
+    const b = new Uint8Array(zstdCompressSync(new TextEncoder().encode("tail")));
+    const both = new Uint8Array([...a, ...b]);
+    const out = inflateCapped(both, 4096);
+    expect(out.length).toBe(3004);
+    expect(new TextDecoder().decode(out.subarray(3000))).toBe("tail");
   });
 });
 
