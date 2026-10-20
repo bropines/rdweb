@@ -25,7 +25,7 @@ import {
   type SwitchDisplay,
   type VideoFrame as WireVideoFrame,
 } from "./proto/session_pb.js";
-import { AudioPlayer } from "./audio.js";
+import { AudioPlayer, type AudioState } from "./audio.js";
 import { isRetryable, PeerConnector, SessionError, toSessionError, versionNumber } from "./connector.js";
 import { parseServerKey } from "./crypto.js";
 import { CursorStore, type CursorShape } from "./cursor.js";
@@ -86,7 +86,7 @@ export class Session {
   private codecSupport: CodecSupport = { decode: new Set(), decode444: new Set() };
   private video: VideoPipeline | null = null;
   private frameSink: ((frame: VideoFrame) => void) | null = null;
-  private readonly audio = new AudioPlayer();
+  private readonly audio = new AudioPlayer((state) => this.events.emit("audio", { state }));
   readonly cursors = new CursorStore();
   private currentCursor: CursorShape | null = null;
 
@@ -445,6 +445,11 @@ export class Session {
     this.pressedCodes.clear();
     for (const code of codes) this.keyInternal({ code, key: "", down: false });
     this.mods = { shift: false, ctrl: false, alt: false, meta: false };
+  }
+
+  /** Remote audio state; "blocked" needs a user gesture (resumeAudio). */
+  get audioState(): AudioState {
+    return this.audio.state;
   }
 
   /** Must be called from a user gesture before audio can play. */
