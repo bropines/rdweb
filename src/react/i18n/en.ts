@@ -39,6 +39,8 @@ export const en = {
   chatDesc: "Shows a message to the remote user.",
   chatFromRemote: "Message from the remote user",
   send: "Send",
+  enableSound: "Enable sound",
+  audioBlocked: "Sound is blocked by the browser — click the screen or the sound button",
   screenshot: "Save screenshot",
   forgetPassword: "Forget saved password",
   passwordCleared: "Saved password removed",

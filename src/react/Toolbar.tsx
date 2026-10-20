@@ -39,7 +39,8 @@ export type ActionId =
   | "blockInput"
   | "fullscreen"
   | "forgetPassword"
-  | "restart";
+  | "restart"
+  | "sound";
 
 export interface ToolbarAction {
   /** A built-in id, or any other unique string for host actions. */
@@ -52,6 +53,8 @@ export interface ToolbarAction {
   /** Not available for this device/session: neither shown nor offered for pinning. */
   hidden?: boolean;
   danger?: boolean;
+  /** Shown on the bar while visible even when not pinned (something that needs attention). */
+  forcePinned?: boolean;
   run: () => void;
 }
 
@@ -81,14 +84,18 @@ export interface ToolbarProps {
 
 const COLLAPSE_AFTER_MS = 2500;
 
-/** Splits the visible actions into the pinned ones (in pin order) and the rest (menu). */
+/**
+ * Splits the visible actions into the bar (force-pinned ones first, then the
+ * pinned ones in pin order) and the rest (menu).
+ */
 export function splitToolbarActions(actions: ToolbarAction[], pinned: string[]): { visible: ToolbarAction[]; pinned: ToolbarAction[]; rest: ToolbarAction[] } {
   const visible = actions.filter((a) => !a.hidden);
   const byId = new Map(visible.map((a) => [a.id, a]));
+  const forced = visible.filter((a) => a.forcePinned && !pinned.includes(a.id));
   return {
     visible,
-    pinned: pinned.map((id) => byId.get(id)).filter((a): a is ToolbarAction => !!a),
-    rest: visible.filter((a) => !pinned.includes(a.id)),
+    pinned: [...forced, ...pinned.map((id) => byId.get(id)).filter((a): a is ToolbarAction => !!a)],
+    rest: visible.filter((a) => !pinned.includes(a.id) && !a.forcePinned),
   };
 }
 

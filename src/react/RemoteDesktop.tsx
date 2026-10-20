@@ -33,6 +33,7 @@ import {
   Session,
   Viewer,
   isWebCodecsAvailable,
+  type AudioState,
   type CloseInfo,
   type InputMode,
   type PeerSummary,
@@ -235,6 +236,7 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
   const [permKeyboard, setPermKeyboard] = useState(true);
   const [hasSaved, setHasSaved] = useState(() => hasRememberedHash(server.key, peerId, storageKey));
   const [hostHashForgotten, setHostHashForgotten] = useState(false);
+  const [audioState, setAudioState] = useState<AudioState>("off");
   const inputMode: InputMode = prefs.view.inputMode ?? (isTouchFirst() ? "trackpad" : "mouse");
   const touch = inputMode !== "mouse";
 
@@ -269,6 +271,8 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
     });
     sessionRef.current = session;
     viewerRef.current = viewer;
+    setAudioState(session.audioState);
+    let audioBlockedShown = false;
     const forgetLocal = () => {
       saveRememberedHash(server.key, peerId, null, storageKey);
       setHasSaved(false);
@@ -321,6 +325,13 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
       session.on("peer", ({ peer }) => setPeer(peer)),
       session.on("display", ({ display }) => setCurrentDisplay(display.index)),
       session.on("stats", setStats),
+      session.on("audio", ({ state }) => {
+        setAudioState(state);
+        // browsers block autoplay until a user gesture: say so once per session
+        if (state !== "blocked" || audioBlockedShown) return;
+        audioBlockedShown = true;
+        toast(t("audioBlocked"), { action: { label: t("enableSound"), onClick: () => session.resumeAudio() } });
+      }),
       session.on("permission", ({ name, enabled }) => {
         if (name === "keyboard") setPermKeyboard(enabled);
       }),
@@ -458,6 +469,8 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
   const st = prefs.settings;
   const hostHashSaved = !!credentials?.rememberedHash && !!credentials.fromPersonalBook && !hostHashForgotten;
   const actions: ToolbarAction[] = [
+    // the browser blocks audio until a user gesture: offer one on the bar
+    { id: "sound", label: t("enableSound"), icon: VolumeX, hidden: audioState !== "blocked", forcePinned: true, run: () => s?.resumeAudio() },
     { id: "settings", label: t("settings.title"), icon: Settings2, disabled: off, run: () => setSettingsOpen(true) },
     { id: "files", label: t("files.title"), icon: FolderOpen, disabled: off || s?.permission.file === false, run: () => setFilesOpen(true) },
     {

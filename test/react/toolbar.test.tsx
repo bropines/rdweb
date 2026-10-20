@@ -49,6 +49,18 @@ describe("toolbar logic", () => {
     expect(rest.map((a) => a.id)).toEqual(["settings", "host-extra"]);
   });
 
+  it("puts force-pinned actions on the bar first while they are visible", () => {
+    const list: ToolbarAction[] = [...actions(), { id: "sound", label: "Enable sound", icon: Camera, forcePinned: true, run: noop }];
+    const { pinned, rest } = splitToolbarActions(list, ["files"]);
+    expect(pinned.map((a) => a.id)).toEqual(["sound", "files"]);
+    expect(rest.map((a) => a.id)).toEqual(["settings", "host-extra"]);
+    list[4]!.hidden = true;
+    expect(splitToolbarActions(list, ["files"]).pinned.map((a) => a.id)).toEqual(["files"]);
+    // pinned explicitly: keeps its place
+    list[4]!.hidden = false;
+    expect(splitToolbarActions(list, ["files", "sound"]).pinned.map((a) => a.id)).toEqual(["files", "sound"]);
+  });
+
   it("pins at the end and unpins", () => {
     expect(togglePinned(["a", "b"], "c", true)).toEqual(["a", "b", "c"]);
     expect(togglePinned(["a", "b"], "a", true)).toEqual(["b", "a"]);

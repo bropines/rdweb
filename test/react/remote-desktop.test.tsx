@@ -18,6 +18,8 @@ const fakes = vi.hoisted(() => {
     close = vi.fn();
     updateSettings = vi.fn();
     submitTwoFactor = vi.fn();
+    resumeAudio = vi.fn();
+    audioState = "off";
     constructor(public opts: SessionOptions) {
       FakeSession.all.push(this);
     }
@@ -49,6 +51,9 @@ const fakes = vi.hoisted(() => {
   }
   return { FakeSession, FakeViewer };
 });
+
+const toast = vi.hoisted(() => Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), info: vi.fn() }));
+vi.mock("sonner", async (importOriginal) => ({ ...(await importOriginal<typeof import("sonner")>()), toast }));
 
 vi.mock("../../src/index.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/index.js")>()),
@@ -82,6 +87,7 @@ const session = () => fakes.FakeSession.all.at(-1)!;
 beforeEach(() => {
   localStorage.clear();
   fakes.FakeSession.all = [];
+  toast.mockClear();
 });
 afterEach(cleanup);
 
@@ -174,5 +180,27 @@ describe("<RemoteDesktop>", () => {
     const before = fakes.FakeSession.all.length;
     fireEvent.click(screen.getByRole("button", { name: "Переподключиться" }));
     expect(fakes.FakeSession.all.length).toBe(before + 1);
+  });
+
+  it("offers to enable sound while the browser blocks it", () => {
+    render(<RemoteDesktop peerId="1" server={server} onLeave={vi.fn()} />);
+    act(() => session().emit("state", { state: "connected" }));
+    act(() => session().emit("connected", { peer, rememberedHash: null }));
+    const bar = () => screen.getByRole("toolbar", { name: "office-pc" });
+    expect(within(bar()).queryByRole("button", { name: "Enable sound" })).toBeNull();
+
+    act(() => session().emit("audio", { state: "blocked" }));
+    // on the bar although it was never pinned
+    fireEvent.click(within(bar()).getByRole("button", { name: "Enable sound" }));
+    expect(session().resumeAudio).toHaveBeenCalledTimes(1);
+    const blocked = toast.mock.calls.filter(([msg]) => String(msg).startsWith("Sound is blocked by the browser"));
+    expect(blocked).toHaveLength(1);
+
+    act(() => session().emit("audio", { state: "playing" }));
+    expect(within(bar()).queryByRole("button", { name: "Enable sound" })).toBeNull();
+    act(() => session().emit("audio", { state: "blocked" }));
+    expect(within(bar()).getByRole("button", { name: "Enable sound" })).toBeTruthy();
+    // the toast is shown once per session
+    expect(toast.mock.calls.filter(([msg]) => String(msg).startsWith("Sound is blocked"))).toHaveLength(1);
   });
 });
