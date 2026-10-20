@@ -142,6 +142,7 @@ export interface ConnectorEvents {
 export class PeerConnector {
   readonly peerId: string;
   private relay: WsTransport | null = null;
+  private relayUrlUsed = "";
   private cipher: StreamCipher | null = null;
   private salt = "";
   private challenge = "";
@@ -161,6 +162,11 @@ export class PeerConnector {
 
   get clientVersion(): string {
     return this.cfg.clientVersion ?? CLIENT_VERSION;
+  }
+
+  /** The relay WebSocket URL this link goes through (empty before the relay step). */
+  get relayUrl(): string {
+    return this.relayUrlUsed;
   }
 
   /** The salted password hash that worked, for "remember password". */
@@ -205,6 +211,7 @@ export class PeerConnector {
 
     this.ev.state("relay");
     const relayUrl = server.relayUrl ? server.relayUrl(ticket.relayServer) : relayUrlNextTo(server.rendezvousUrl);
+    this.relayUrlUsed = relayUrl;
     const relay = await joinRelay(relayUrl, ticket.uuid, this.peerId, server.key.trim(), signal, this.cfg.connType);
     if (this.closed) {
       relay.close("closed");

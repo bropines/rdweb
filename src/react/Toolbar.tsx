@@ -75,6 +75,10 @@ export interface ToolbarProps {
   title: string;
   subtitle: string;
   status: "ok" | "busy" | "error";
+  /** Click on the status (dot and name): e.g. connection details. */
+  onStatus?: () => void;
+  /** Touch screen: a larger handle when collapsed. */
+  touch?: boolean;
   /** While false the bar stays expanded (connecting, errors). */
   canCollapse: boolean;
   onDisconnect: () => void;
@@ -160,7 +164,10 @@ export function Toolbar(p: ToolbarProps) {
       <button
         type="button"
         style={style}
-        className="absolute top-0 z-30 flex h-5 -translate-x-1/2 items-center gap-1 rounded-b-md bg-neutral-900/80 px-2 text-white/80 shadow backdrop-blur hover:bg-neutral-800"
+        className={cn(
+          "absolute top-0 z-30 flex -translate-x-1/2 items-center gap-1 rounded-b-md bg-neutral-900/80 text-white/80 shadow backdrop-blur hover:bg-neutral-800",
+          p.touch ? "h-8 gap-1.5 rounded-b-lg px-4" : "h-5 px-2",
+        )}
         aria-label={t("toolbar.show")}
         title={t("toolbar.show")}
         onClick={() => {
@@ -174,8 +181,8 @@ export function Toolbar(p: ToolbarProps) {
           }
         }}
       >
-        <span className={cn("h-1.5 w-1.5 rounded-full", dot)} />
-        <ChevronDown className="h-3.5 w-3.5" />
+        <span className={cn("rounded-full", p.touch ? "h-2.5 w-2.5" : "h-1.5 w-1.5", dot)} />
+        <ChevronDown className={p.touch ? "h-5 w-5" : "h-3.5 w-3.5"} />
       </button>
     );
   }
@@ -209,10 +216,17 @@ export function Toolbar(p: ToolbarProps) {
         >
           <GripVertical className="h-3.5 w-3.5" />
         </span>
-        <div className="flex min-w-0 shrink items-center gap-1.5 px-1" title={`${p.title} · ${p.subtitle}`}>
+        <button
+          type="button"
+          disabled={!p.onStatus}
+          onClick={p.onStatus}
+          className="flex min-w-0 shrink items-center gap-1.5 rounded-md px-1.5 py-1 enabled:hover:bg-white/10"
+          title={`${p.title} · ${p.subtitle}`}
+          aria-label={t("toolbar.connection")}
+        >
           <span className={cn("h-2 w-2 shrink-0 rounded-full", dot)} />
           <span className="hidden max-w-[9rem] truncate text-xs font-medium sm:inline">{p.title}</span>
-        </div>
+        </button>
         <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto [scrollbar-width:none]">
           {pinnedActions.map((a) => (
             <BarButton key={a.id} action={a} />

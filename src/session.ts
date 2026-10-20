@@ -115,12 +115,24 @@ export class Session {
   private scrollRest = { x: 0, y: 0 };
   private closedInfo: SessionEventMap["close"] | null = null;
 
+  private readonly rendezvousUrl: string;
+
+  /**
+   * How the session is connected: the browser always goes through the relay
+   * (WebSocket; TLS when wss://), end-to-end encrypted with the device.
+   */
+  get connection(): { rendezvousUrl: string; relayUrl: string; tls: boolean } {
+    const relayUrl = this.link.relayUrl;
+    return { rendezvousUrl: this.rendezvousUrl, relayUrl, tls: relayUrl.startsWith("wss:") };
+  }
+
   constructor(opts: SessionOptions) {
     this.peerId = opts.peerId.replace(/\s+/g, "");
     if (!this.peerId) throw new SessionError("peer id is empty", "bad-config");
     this.settingsValue = { ...DEFAULT_SETTINGS, ...opts.settings };
     // fail early on a missing/bad key: we never connect unauthenticated
     parseServerKey(opts.server.key);
+    this.rendezvousUrl = opts.server.rendezvousUrl;
     this.link = new PeerConnector(
       {
         peerId: this.peerId,
