@@ -585,6 +585,47 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     fitActive();
   };
 
+  // Pinch with two fingers on the terminal: font size follows, saved on release.
+  const applyRef = useRef(applyPrefs);
+  applyRef.current = applyPrefs;
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    let start: { dist: number; size: number } | null = null;
+    let size = 0;
+    const dist = (t: TouchList) => Math.hypot(t[0]!.clientX - t[1]!.clientX, t[0]!.clientY - t[1]!.clientY);
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 2) return;
+      start = { dist: dist(e.touches), size: prefsRef.current.fontSize };
+      size = start.size;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!start || e.touches.length !== 2) return;
+      e.preventDefault(); // no page zoom, no scrolling while pinching
+      const next = Math.min(32, Math.max(8, Math.round(start.size * (dist(e.touches) / start.dist))));
+      if (next === size) return;
+      size = next;
+      for (const p of panes.current.values()) p.term.options.fontSize = next;
+      fitActive();
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (!start || e.touches.length >= 2) return;
+      const changed = size !== start.size;
+      start = null;
+      if (changed) void applyRef.current({ ...prefsRef.current, fontSize: size });
+    };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd, { passive: true });
+    el.addEventListener("touchcancel", onEnd, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, []);
+
   const overlay = conn !== "ready" && !ended && !choices;
   const ready = conn === "ready" && !ended;
   return (

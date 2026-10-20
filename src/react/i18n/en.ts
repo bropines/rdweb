@@ -195,7 +195,7 @@ export const en = {
     searchNext: "Next match (Enter)",
     copyOnSelect: "Copy text when selected",
     rightClickPaste: "Right click copies the selection or pastes",
-    keysHint: "Shift+Enter: new line. Ctrl/Cmd + = - 0: font size. Links open on click.",
+    keysHint: "Shift+Enter: new line. Ctrl/Cmd + = - 0 or a pinch: font size. Links open on click.",
     saved: {
       title: "Shells on this device",
       desc: "These shells kept running after you left. Return to them or start a new terminal.",
