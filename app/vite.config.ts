@@ -1,3 +1,5 @@
+import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 import autoprefixer from "autoprefixer";
@@ -5,6 +7,22 @@ import tailwindcss from "tailwindcss";
 import { defineConfig, type Plugin } from "vite";
 
 const at = (p: string) => fileURLToPath(new URL(p, import.meta.url));
+
+// Which build is deployed: package version, commit and build date, shown in
+// the footer and the About dialog.
+function gitCommit(): string {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
+  try {
+    return execSync("git rev-parse HEAD", { cwd: at("."), stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch {
+    return "";
+  }
+}
+const BUILD = {
+  version: (JSON.parse(readFileSync(at("../package.json"), "utf8")) as { version: string }).version,
+  commit: gitCommit(),
+  date: new Date().toISOString().slice(0, 10),
+};
 
 // Production builds only (the dev server needs inline scripts): the page may
 // talk to the configured servers over WebSocket and load nothing else.
@@ -34,6 +52,7 @@ export default defineConfig({
   root: at("."),
   base: "/rdweb/",
   plugins: [react(), contentSecurityPolicy()],
+  define: { __RDWEB_BUILD__: JSON.stringify(BUILD) },
   resolve: {
     alias: [
       { find: /^rdweb$/, replacement: at("../src/index.ts") },

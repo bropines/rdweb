@@ -8,6 +8,8 @@ import { mapCode, peerOsFromPlatform } from "../src/keymap.js";
 import { inflateCapped, inflateExact } from "../src/zstd.js";
 import { classifyPeerError } from "../src/files/job.js";
 import { announcedRelayUrl, relayUrlNextTo } from "../src/connector.js";
+import { RDWEB_VERSION } from "../src/version.js";
+import { readFileSync } from "node:fs";
 import { baseNameRemote, joinRemote, parentRemote, safeRelativeSegments } from "../src/files/paths.js";
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
@@ -182,5 +184,12 @@ describe("relay URLs", () => {
   it("maps an announced relay on request", () => {
     expect(announcedRelayUrl("relay.example.com:21117")).toBe("wss://relay.example.com/ws/relay");
     expect(announcedRelayUrl("10.0.0.5:21117")).toMatch(/^wss?:\/\/10\.0\.0\.5:21119$/);
+  });
+});
+
+describe("version", () => {
+  it("matches package.json", () => {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
+    expect(RDWEB_VERSION).toBe(pkg.version);
   });
 });

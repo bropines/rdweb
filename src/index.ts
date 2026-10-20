@@ -1,5 +1,6 @@
 export { Session, SessionError, CLIENT_VERSION, MOUSE_BUTTON, MOUSE_TYPE } from "./session.js";
 export { relayUrlNextTo, announcedRelayUrl } from "./connector.js";
+export { RDWEB_VERSION } from "./version.js";
 export type { KeyInput, MouseButtonName } from "./session.js";
 export { Viewer, normalizeWheel } from "./viewer.js";
 export type { InputMode, ScaleMode, ViewerOptions, ViewerEventMap } from "./viewer.js";
