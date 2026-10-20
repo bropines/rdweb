@@ -68,7 +68,16 @@ const en = {
     source: "Source code",
     build: "Build",
     close: "Close",
+    install: "rdweb can be installed as an app; it then works without a connection to this website (your server is still needed to reach devices).",
   },
+  install: {
+    button: "Install",
+    title: "Install rdweb",
+    ios: "Tap Share, then “Add to Home Screen”.",
+    macos: "In Safari's menu bar, choose File → Add to Dock.",
+    hint: "The app opens in its own window and starts even when this website is unreachable.",
+  },
+  update: { available: "A new version is available", reload: "Reload" },
   session: { back: "Back to devices" },
 };
 
@@ -140,7 +149,16 @@ const ru: Messages = {
     source: "Исходный код",
     build: "Сборка",
     close: "Закрыть",
+    install: "rdweb можно установить как приложение: тогда оно работает и без связи с этим сайтом (для подключения к устройствам по-прежнему нужен ваш сервер).",
   },
+  install: {
+    button: "Установить",
+    title: "Установка rdweb",
+    ios: "Нажмите «Поделиться», затем «На экран „Домой“».",
+    macos: "В строке меню Safari выберите «Файл» → «Добавить в Dock».",
+    hint: "Приложение откроется в отдельном окне и запустится, даже если этот сайт недоступен.",
+  },
+  update: { available: "Доступна новая версия", reload: "Обновить" },
   session: { back: "К списку устройств" },
 };
 

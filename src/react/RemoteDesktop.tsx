@@ -46,6 +46,7 @@ import {
 } from "../index.js";
 import { droppedItems, FilesSheet } from "./FilesSheet.js";
 import { RemoteTerminal } from "./RemoteTerminal.js";
+import type { ShellStore } from "./shellStore.js";
 import { I18nProvider, useI18n, type DeepPartial, type Lang, type Messages } from "./i18n/index.js";
 import { cn, SCOPE } from "./lib/utils.js";
 import {
@@ -129,6 +130,11 @@ export interface RemoteDesktopProps {
    * "terminal": only a remote shell (RustDesk 1.4.1+ peers).
    */
   mode?: "desktop" | "files" | "terminal";
+  /**
+   * Terminal mode: where this device's kept shells are remembered for a later
+   * reattach ("return to your shells"). Default: this browser's localStorage.
+   */
+  shellStore?: ShellStore;
 }
 
 /**
@@ -173,6 +179,7 @@ function RemoteFiles(props: RemoteDesktopProps) {
         myId={props.myId || undefined}
         onBack={props.onLeave}
         title={props.peerId}
+        storageKey={storageKey}
       />
     </div>
   );
@@ -706,6 +713,7 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
         myId={props.myId || undefined}
         incoming={incoming}
         onIncomingDone={() => setIncoming(null)}
+        storageKey={storageKey}
       />
       <SettingsSheet
         open={settingsOpen}

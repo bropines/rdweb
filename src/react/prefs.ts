@@ -4,9 +4,12 @@
 //   <prefix>.prefs                          settings, view and toolbar prefs
 //   <prefix>.pw.<server key[0:16]>.<peer>   remembered password hash
 //   <prefix>.recent                         recently connected devices
+//   <prefix>.files.localPane                file manager: local pane shown
+// (and the file manager's local folder handle in IndexedDB, see localFolder.ts)
 // RD Panel's web client used exactly this layout with the prefix
 // "rdpanel.webclient", so passing that prefix keeps its users' data.
 import { DEFAULT_SETTINGS, decodeBase64, encodeBase64, type InputMode, type ScaleMode, type SessionSettings } from "../index.js";
+import { clearLocalFolderData } from "./localFolder.js";
 
 export const DEFAULT_STORAGE_KEY = "rdweb";
 /** The prefix RD Panel used before the UI moved into rdweb. */
@@ -152,4 +155,5 @@ export function migrateStorage(storageKey: string = DEFAULT_STORAGE_KEY): void {
 export function clearStoredData(storageKey: string = DEFAULT_STORAGE_KEY): void {
   const k = keys(storageKey);
   removeWhere((key) => key.startsWith(k.pw) || key === k.recent || key === k.prefs || (storageKey === RDPANEL_STORAGE_KEY && isRdpanelLegacyKey(key)));
+  clearLocalFolderData(storageKey);
 }

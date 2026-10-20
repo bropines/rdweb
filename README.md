@@ -52,6 +52,10 @@ web client, and the [standalone web client](#standalone-web-client) at
   through the file manager; pasted text goes to the remote clipboard, then the
   remote side's own paste shortcut is pressed (Ctrl+V, or Cmd+V on macOS peers),
   so Cmd+V from a Mac pastes on Windows too (`Session.pasteShortcut`).
+- Two-pane file manager in Chromium browsers (File System Access API): a
+  "Local folder" pane next to the remote list copies files and folders both
+  ways, by buttons or by dragging rows between the panes, and asks before
+  replacing local files; Safari and Firefox keep the single remote list.
 
 ## Usage
 
@@ -208,6 +212,11 @@ Notes:
   have the same keys, Russian plurals use `Intl.PluralRules`.
 - `storageKey: "rdpanel.webclient"` reads RD Panel's existing data as it is
   (same layout) and removes the plaintext passwords of its first web client.
+- The file manager's local pane exists only where `showDirectoryPicker` does.
+  Whether it is open is kept in localStorage (`<storageKey>.files.localPane`)
+  and the picked folder in IndexedDB (database `rdweb-files`), so after a
+  reload at most a "Reconnect folder" click brings it back; `clearStoredData`
+  forgets both.
 
 ### Styling
 
@@ -255,6 +264,13 @@ repository (`app/`): add a server, enter a device id, connect.
   other than WebSockets (which the app opens only to the servers you add). Device passwords go only to the device,
   inside the encrypted session; "remember password" keeps a salted hash, not
   the password, in this browser. Servers and settings stay in localStorage.
+
+- **Install and offline**: the page is an installable web app (the header's
+  Install button in Chromium browsers; Share → Add to Home Screen on iOS and
+  iPadOS; File → Add to Dock in Safari 17+ on macOS). A service worker keeps
+  the app itself, so it opens without a connection to GitHub Pages; reaching
+  devices still needs your server. A new deploy shows a "Reload" prompt.
+  Icons come from `app/public/favicon.svg` (`node scripts/gen-app-icons.mjs`).
 
 English and Russian, light/dark/system theme, phone layouts. The
 [pages workflow](.github/workflows/pages.yml) deploys it on every push to

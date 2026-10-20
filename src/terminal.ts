@@ -227,6 +227,21 @@ export class TerminalSession {
     this.link.send({ union: { case: "terminalAction", value: { union: { case: "close", value: { terminalId } } } } });
   }
 
+  /** Ends every shell of the service (the open ones and the restorable ones) and the session. */
+  closeService(reason = "closed by user"): void {
+    if (this.stateValue === "closed") return;
+    if (this.link.isOpen) {
+      try {
+        for (const terminalId of new Set([...this.open, ...this.others])) {
+          this.link.send({ union: { case: "terminalAction", value: { union: { case: "close", value: { terminalId } } } } });
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    this.close(reason, { keepShells: true });
+  }
+
   /**
    * Ends the session. The shells end too unless keepShells is set, which
    * leaves a persistent service's shells running for a later reattach.

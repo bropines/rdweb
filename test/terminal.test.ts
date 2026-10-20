@@ -144,5 +144,16 @@ describe("TerminalSession", () => {
     // a reconnect keeps the shells; only Back (close without keepShells) ends them
     s.close("reconnect", { keepShells: true });
     expect(terminalActions().filter((a) => a.case === "close")).toEqual([]);
+
+    // "Close" on a remembered service ends every shell, open or not
+    const s2 = new TerminalSession({ peerId: PEER_ID, server: serverConfig(), rememberedHash: sha256(PASSWORD, SALT), persistent: true, serviceId: "svc-1" });
+    await s2.connect();
+    s2.closeService();
+    const closed = terminalActions()
+      .filter((a) => a.case === "close")
+      .map((a) => (a.value as { terminalId: number }).terminalId)
+      .sort();
+    expect(closed).toEqual([0, 2, 3]);
+    expect(s2.state).toBe("closed");
   });
 });
