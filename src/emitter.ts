@@ -9,6 +9,10 @@ export class Emitter<M> {
     return () => set!.delete(fn as (ev: never) => void);
   }
 
+  listenerCount<K extends keyof M>(type: K): number {
+    return this.listeners.get(type)?.size ?? 0;
+  }
+
   emit<K extends keyof M>(type: K, ev: M[K]): void {
     const set = this.listeners.get(type);
     if (!set) return;

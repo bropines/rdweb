@@ -24,3 +24,27 @@ export type {
   SessionStats,
 } from "./types.js";
 export type { PeerOs } from "./keymap.js";
+export { FileTransferSession } from "./files/session.js";
+export { Download, IncomingFile } from "./files/download.js";
+export { Upload } from "./files/upload.js";
+export { FileTransferError } from "./files/types.js";
+export type {
+  ConflictAnswer,
+  DownloadOptions,
+  FileErrorCode,
+  FileErrorEvent,
+  FilePeerSummary,
+  FileTransferEventMap,
+  FileTransferOptions,
+  RemoteDirectory,
+  RemoteEntry,
+  RemoteEntryType,
+  RemoveOptions,
+  TransferDirection,
+  TransferFileInfo,
+  TransferProgress,
+  TransferResult,
+  UploadConflict,
+  UploadItem,
+  UploadOptions,
+} from "./files/types.js";
