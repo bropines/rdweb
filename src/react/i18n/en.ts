@@ -143,6 +143,8 @@ export const en = {
     "login-required": "The server requires a signed-in client and did not accept the access token.",
     timeout: "The device did not answer in time. Check that it is online and allows incoming connections.",
     network: "Network error: {{detail}}",
+    unreachable:
+      "Network error: {{detail}}. Browsers reach the server only over HTTPS: its domain name (with a valid certificate) must serve /ws/id and /ws/relay. An IP address or a RustDesk port (21116, 21117) does not work here.",
     handshake: "The device could not be verified, so the connection was refused ({{detail}}).",
     "unverified-peer": "The server did not vouch for this device's key, so the connection was refused.",
     refused: "The connection was refused: {{detail}}",

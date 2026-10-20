@@ -123,9 +123,12 @@ promise and as an `error` event; a peer that disables file access ends
 running transfers with `permission-denied`.
 
 The server must expose hbbs (port 21118) and hbbr (port 21119) WebSockets,
-typically through a reverse proxy at `/ws/id` and `/ws/relay`. By default a
-relay announced as `host:21117` is reached at `wss://host/ws/relay` (or
-`ws(s)://ip:21119` for IP addresses); pass `relayUrl` to override.
+typically through a reverse proxy at `/ws/id` and `/ws/relay`. By default the
+relay is reached next to hbbs (`relayUrlNextTo`: `wss://host/ws/id` →
+`wss://host/ws/relay`), because the relay hbbs announces is a TCP address for
+native clients; pass `relayUrl` to override, e.g. `relayUrl: announcedRelayUrl`
+to map an announced `host:21117` to `wss://host/ws/relay`. A failed WebSocket
+connection to either server is a `SessionError` with code `unreachable`.
 
 Browser support: Chromium-based browsers and Safari 17+ (WebCodecs). Firefox
 130+ decodes VP8/VP9/AV1. H.265 depends on platform decoders.
@@ -227,7 +230,9 @@ repository (`app/`): add a server, enter a device id, connect.
   relay URL, and the public key (`id_ed25519.pub` next to hbbs, the "Key" in
   the RustDesk client's ID/Relay server settings). A RustDesk server config
   string ("Export server config" in the RustDesk client, RD Panel's Server
-  page) fills the form.
+  page) fills the form; its HTTPS API server wins over the ID and relay
+  addresses, which are TCP endpoints for native clients (often IP addresses,
+  which browsers cannot use without a certificate).
 - **The server must expose** hbbs and hbbr as WebSockets over TLS — `/ws/id`
   to hbbs port 21118, `/ws/relay` to hbbr port 21119 — e.g. through nginx,
   Caddy or angie with a certificate (pages served over HTTPS cannot open

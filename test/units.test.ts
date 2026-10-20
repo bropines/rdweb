@@ -7,6 +7,7 @@ import { StreamCipher, loginProof, rememberedPasswordHash } from "../src/crypto.
 import { mapCode, peerOsFromPlatform } from "../src/keymap.js";
 import { inflateCapped, inflateExact } from "../src/zstd.js";
 import { classifyPeerError } from "../src/files/job.js";
+import { announcedRelayUrl, relayUrlNextTo } from "../src/connector.js";
 import { baseNameRemote, joinRemote, parentRemote, safeRelativeSegments } from "../src/files/paths.js";
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
@@ -167,5 +168,19 @@ describe("remote paths", () => {
     expect(classifyPeerError("file transfer rejected: too many files (20000 files exceeds limit of 10000)")).toBe("too-many-files");
     expect(classifyPeerError("path traversal detected in file name")).toBe("invalid-name");
     expect(classifyPeerError("disk on fire")).toBe("remote");
+  });
+});
+
+describe("relay URLs", () => {
+  it("defaults to hbbr next to hbbs", () => {
+    expect(relayUrlNextTo("wss://rd.example.com/ws/id")).toBe("wss://rd.example.com/ws/relay");
+    expect(relayUrlNextTo("wss://rd.example.com:8443/rd/ws/id?x=1")).toBe("wss://rd.example.com:8443/rd/ws/relay");
+    expect(relayUrlNextTo("wss://rd.example.com/hbbs")).toBe("wss://rd.example.com/ws/relay");
+    expect(relayUrlNextTo("ws://10.0.0.5:21118")).toBe("ws://10.0.0.5:21119/");
+  });
+
+  it("maps an announced relay on request", () => {
+    expect(announcedRelayUrl("relay.example.com:21117")).toBe("wss://relay.example.com/ws/relay");
+    expect(announcedRelayUrl("10.0.0.5:21117")).toMatch(/^wss?:\/\/10\.0\.0\.5:21119$/);
   });
 });

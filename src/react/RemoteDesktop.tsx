@@ -191,7 +191,7 @@ type DialogName = "none" | "password" | "twoFactor" | "clipboard" | "type" | "ch
 const STICKY = ["ControlLeft", "AltLeft", "MetaLeft", "ShiftLeft"] as const;
 type Sticky = (typeof STICKY)[number];
 
-const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "handshake", "unverified-peer", "refused"];
+const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused"];
 
 function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) {
   const { peerId, credentials, onLeave, onReconnect } = props;
