@@ -9,6 +9,8 @@ export { SettingsSheet } from "./SettingsSheet.js";
 export type { SettingsSheetProps } from "./SettingsSheet.js";
 export { FilesSheet } from "./FilesSheet.js";
 export { RemoteTerminal } from "./RemoteTerminal.js";
+export { localShellStore } from "./shellStore.js";
+export type { SavedShells, ShellStore } from "./shellStore.js";
 export type { FilesSheetProps } from "./FilesSheet.js";
 export { Toaster } from "./Toaster.js";
 export { ZipWriter, ZipTooLargeError, crc32 } from "./zip.js";
