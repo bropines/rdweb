@@ -16,5 +16,13 @@ dist/react/style.css is generated with Tailwind CSS and includes a scoped
 subset of its preflight (MIT, Tailwind Labs). The React UI was moved here
 from RD Panel (MIT, same authors).
 
+src/react/fonts/nerdSymbols.ts embeds "Symbols Nerd Font Mono" 3.5.1 from
+Nerd Fonts (https://github.com/ryanoasis/nerd-fonts, MIT, Copyright (c) 2014
+Ryan L McIntyre), converted to WOFF2. Its icon sets keep their licenses, among
+them Font Awesome and Codicons (CC BY 4.0), Material Design Icons (Apache 2.0),
+Octicons and Powerline Extra Symbols (MIT), Weather Icons and Pomicons (SIL OFL
+1.1); see the Nerd Fonts README for the full list. src/react/xtermCss.ts is the
+stylesheet of xterm.js (MIT, The xterm.js authors).
+
 Third-party npm packages are distributed under their own licenses; see
 package.json and their LICENSE files.

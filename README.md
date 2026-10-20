@@ -42,7 +42,9 @@ web client, and the [standalone web client](#standalone-web-client) at
   limited) and WebSocket backpressure on uploads.
 - Terminal (`TerminalSession`, RustDesk 1.4.1+ peers): a remote shell over its
   own connection (PowerShell/cmd on Windows, the user's shell elsewhere), with
-  resize and zstd-compressed output.
+  resize and zstd-compressed output. The React terminal has its own settings
+  (font installed on the computer, size) and shows prompt icons (oh-my-posh,
+  starship) through a built-in Symbols Nerd Font loaded on demand.
 - Pasting (Ctrl/Cmd+V) or dropping files onto the remote screen uploads them
   through the file manager; pasted text goes to the remote clipboard first.
 
