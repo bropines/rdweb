@@ -42,8 +42,10 @@ import {
   type SessionSettings,
   type SessionState,
   type SessionStats,
+  type UploadItem,
 } from "../index.js";
-import { FilesSheet } from "./FilesSheet.js";
+import { droppedItems, FilesSheet } from "./FilesSheet.js";
+import { RemoteTerminal } from "./RemoteTerminal.js";
 import { I18nProvider, useI18n, type DeepPartial, type Lang, type Messages } from "./i18n/index.js";
 import { cn, SCOPE } from "./lib/utils.js";
 import {
@@ -121,6 +123,12 @@ export interface RemoteDesktopProps {
   extraActions?: ToolbarAction[];
   /** Classes for the full-screen shell. */
   className?: string;
+  /**
+   * "desktop" (default): the remote screen. "files": only the file manager
+   * (a file transfer connection, like the desktop client's "Transfer files").
+   * "terminal": only a remote shell (RustDesk 1.4.1+ peers).
+   */
+  mode?: "desktop" | "files" | "terminal";
 }
 
 /**
@@ -135,12 +143,38 @@ export function RemoteDesktop(props: RemoteDesktopProps) {
   const reconnect = useCallback(() => (onReconnect ? onReconnect() : setAttempt((a) => a + 1)), [onReconnect]);
   return (
     <I18nProvider lang={props.lang} messages={props.messages}>
-      {isWebCodecsAvailable() ? (
+      {props.mode === "files" ? (
+        <RemoteFiles key={`${props.server.rendezvousUrl}|${props.server.key}|${props.peerId}`} {...props} />
+      ) : props.mode === "terminal" ? (
+        <RemoteTerminal key={`${props.server.rendezvousUrl}|${props.server.key}|${props.peerId}#${attempt}`} {...props} onReconnect={reconnect} />
+      ) : isWebCodecsAvailable() ? (
         <RemoteSession key={`${props.server.rendezvousUrl}|${props.server.key}|${props.peerId}#${attempt}`} {...props} onReconnect={reconnect} />
       ) : (
         <Unsupported onLeave={props.onLeave} className={props.className} />
       )}
     </I18nProvider>
+  );
+}
+
+/** File manager only: a file transfer connection, no screen. */
+function RemoteFiles(props: RemoteDesktopProps) {
+  const storageKey = props.storageKey ?? DEFAULT_STORAGE_KEY;
+  const [hash] = useState(() => loadRememberedHash(props.server.key, props.peerId, storageKey) ?? props.credentials?.rememberedHash ?? null);
+  return (
+    <div className={cn(SCOPE, "fixed inset-0 bg-background text-foreground", props.className)}>
+      <FilesSheet
+        inline
+        open
+        onOpenChange={() => {}}
+        peerId={props.peerId}
+        server={props.server}
+        rememberedHash={hash}
+        myName={props.myName}
+        myId={props.myId || undefined}
+        onBack={props.onLeave}
+        title={props.peerId}
+      />
+    </div>
   );
 }
 
@@ -227,6 +261,7 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
   const [tfaWrong, setTfaWrong] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [incoming, setIncoming] = useState<UploadItem[] | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [keyboardBar, setKeyboardBar] = useState(false);
   const [sticky, setSticky] = useState<Set<Sticky>>(new Set());
@@ -353,6 +388,17 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
       session.on("close", (info) => {
         setClosed(info);
         setDialog("none");
+      }),
+      viewer.on("files", ({ dataTransfer }) => {
+        if (sessionRef.current?.permission.file === false) {
+          toast.error(t("files.errors.permission-denied"));
+          return;
+        }
+        void droppedItems(dataTransfer).then((items) => {
+          if (!items.length) return;
+          setIncoming(items);
+          setFilesOpen(true);
+        });
       }),
       viewer.on("clipboardBlocked", ({ text }) =>
         toast(t("clipboardReceived"), {
@@ -658,6 +704,8 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
         rememberedHash={loginHash}
         myName={props.myName}
         myId={props.myId || undefined}
+        incoming={incoming}
+        onIncomingDone={() => setIncoming(null)}
       />
       <SettingsSheet
         open={settingsOpen}

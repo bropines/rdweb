@@ -1,6 +1,6 @@
 {
   "name": "rdweb",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Browser remote desktop client for RustDesk-compatible servers (hbbs/hbbr over WebSocket, WebCodecs video), with an optional React UI.",
   "license": "MIT",
   "type": "module",
@@ -36,6 +36,7 @@
   },
   "scripts": {
     "gen": "buf generate",
+    "gen:xterm-css": "node scripts/gen-xterm-css.mjs",
     "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/build-css.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p app/tsconfig.json --noEmit",
     "test": "vitest run",
@@ -48,6 +49,8 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.16.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "fzstd": "^0.1.1",

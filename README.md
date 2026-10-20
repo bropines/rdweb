@@ -40,6 +40,11 @@ web client, and the [standalone web client](#standalone-web-client) at
   negotiation, create, rename and delete. Progress events, cancellation,
   bounded memory (zstd blocks are inflated with a hard cap, unread data is
   limited) and WebSocket backpressure on uploads.
+- Terminal (`TerminalSession`, RustDesk 1.4.1+ peers): a remote shell over its
+  own connection (PowerShell/cmd on Windows, the user's shell elsewhere), with
+  resize and zstd-compressed output.
+- Pasting (Ctrl/Cmd+V) or dropping files onto the remote screen uploads them
+  through the file manager; pasted text goes to the remote clipboard first.
 
 ## Usage
 
@@ -174,10 +179,11 @@ changing `peerId` or the server starts a new session.
 | `rememberLabel`, `rememberHint` | `string` | text of the "remember" checkbox (e.g. "Remember in my account") |
 | `extraActions` | `ToolbarAction[]` | more toolbar actions, pinnable like the built-in ones |
 | `className` | `string` | classes for the shell |
+| `mode` | `"desktop" \| "files" \| "terminal"` | `"files"`: only the file manager (a file transfer connection, no screen); `"terminal"`: only a remote shell (xterm.js, loaded on demand; extra keys on touch screens). Default `"desktop"` |
 
 Also exported: `Toolbar` (with `ToolbarAction`, `ActionId`,
 `DEFAULT_PINNED_DESKTOP/TOUCH`), `SettingsSheet`, `FilesSheet` (a complete
-file manager on its own `FileTransferSession`), `Toaster`, `ZipWriter`,
+file manager on its own `FileTransferSession`; `inline` renders it as a page), `RemoteTerminal`, `Toaster`, `ZipWriter`,
 `formatSize`, `loadRecent`/`pushRecent` and the other storage helpers
 (`loadPrefs`, `loadRememberedHash`, `clearStoredData`, ...), `messages`
 (`en`, `ru`), `createTranslator`, `I18nProvider`/`useI18n` and `cn`.

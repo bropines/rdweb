@@ -161,6 +161,13 @@ export const en = {
     reset: "Reset",
     nextDisplay: "Next monitor ({{n}} of {{total}})",
   },
+  terminal: {
+    title: "Terminal",
+    connecting: "Opening the terminal…",
+    passwordDesc: "Enter the device password to open its terminal.",
+    ended: "The terminal session ended: {{reason}}",
+    keys: "Extra keys",
+  },
   files: {
     title: "Files",
     up: "Up",

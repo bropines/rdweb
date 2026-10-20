@@ -1,5 +1,6 @@
 import {
   ArrowUp,
+  ChevronLeft,
   Download as DownloadIcon,
   EllipsisVertical,
   Eye,
@@ -50,9 +51,33 @@ export interface FilesSheetProps {
   rememberedHash: Uint8Array | null;
   myName?: string;
   myId?: string;
+  /** Full-page file manager (no remote desktop) instead of a side sheet. */
+  inline?: boolean;
+  /** Inline mode: shown as a back button in the header. */
+  onBack?: () => void;
+  /** Inline mode: device name or id in the header. */
+  title?: string;
+  /** Files to upload into the current folder once connected (pasted or dropped on the screen). */
+  incoming?: UploadItem[] | null;
+  onIncomingDone?: () => void;
 }
 
-type ConnState = "idle" | "connecting" | "password" | "twoFactor" | "waiting" | "ready" | "error";
+/** The sheet, or a full-page container in inline mode. */
+function Shell({ inline, open, onOpenChange, children }: { inline?: boolean; open: boolean; onOpenChange: (o: boolean) => void; children: React.ReactNode }) {
+  return inline ? <>{children}</> : <Sheet open={open} onOpenChange={onOpenChange}>{children}</Sheet>;
+}
+
+function Panel({ inline, closeLabel, children }: { inline?: boolean; closeLabel: string; children: React.ReactNode }) {
+  return inline ? (
+    <div className="flex h-dvh min-h-0 flex-col bg-background text-foreground">{children}</div>
+  ) : (
+    <SheetContent className="sm:max-w-2xl" closeLabel={closeLabel}>
+      {children}
+    </SheetContent>
+  );
+}
+
+export type ConnState = "idle" | "connecting" | "password" | "twoFactor" | "waiting" | "ready" | "error";
 
 interface Transfer {
   id: number;
@@ -79,7 +104,8 @@ function saveBlob(blob: Blob, name: string): void {
 }
 
 /** Files from a drop, including folders (via the entries API where available). */
-async function droppedItems(dt: DataTransfer): Promise<UploadItem[]> {
+/** Files (and folders, where the browser exposes entries) of a drop or paste. */
+export async function droppedItems(dt: DataTransfer): Promise<UploadItem[]> {
   const out: UploadItem[] = [];
   const entries = [...dt.items]
     .map((i) => (typeof i.webkitGetAsEntry === "function" ? i.webkitGetAsEntry() : null))
@@ -109,6 +135,7 @@ export function FilesSheet(p: FilesSheetProps) {
   const { t, lang } = useI18n();
   const ftRef = useRef<FileTransferSession | null>(null);
   const [conn, setConn] = useState<ConnState>("idle");
+  const [attempt, setAttempt] = useState(0);
   const [connError, setConnError] = useState("");
   const [pwWrong, setPwWrong] = useState(false);
   const [secret, setSecret] = useState("");
@@ -197,7 +224,7 @@ export function FilesSheet(p: FilesSheetProps) {
       setConnError(e instanceof FileTransferError && e.code === "permission-denied" ? t("files.errors.permission-denied") : e.message);
       setConn("error");
     });
-  }, [p.open, p.peerId, p.server, p.rememberedHash, p.myName, p.myId, t]);
+  }, [p.open, p.peerId, p.server, p.rememberedHash, p.myName, p.myId, t, attempt]);
 
   useEffect(
     () => () => {
@@ -302,6 +329,14 @@ export function FilesSheet(p: FilesSheetProps) {
     track(job, label, "upload", () => void list(cwd));
   };
 
+  // Files pasted or dropped on the remote screen: upload when the connection is up.
+  useEffect(() => {
+    if (conn !== "ready" || !p.incoming?.length) return;
+    upload(p.incoming);
+    p.onIncomingDone?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conn, p.incoming]);
+
   const fromInput = (files: FileList | null) => {
     if (!files) return;
     upload(
@@ -334,12 +369,29 @@ export function FilesSheet(p: FilesSheetProps) {
   const visibleEntries = entries;
 
   return (
-    <Sheet open={p.open} onOpenChange={p.onOpenChange}>
-      <SheetContent className="sm:max-w-2xl" closeLabel={t("common.close")}>
-        <SheetHeader>
-          <SheetTitle>{t("files.title")}</SheetTitle>
-          <SheetDescription className="truncate text-xs">{ready ? cwd || "/" : t(`files.state.${conn}`)}</SheetDescription>
-        </SheetHeader>
+    <Shell inline={p.inline} open={p.open} onOpenChange={p.onOpenChange}>
+      <Panel inline={p.inline} closeLabel={t("common.close")}>
+        {p.inline ? (
+          <div className="flex items-center gap-2 border-b px-3 py-3">
+            {p.onBack && (
+              <Button size="icon" variant="ghost" aria-label={t("toolbar.back")} title={t("toolbar.back")} onClick={p.onBack}>
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
+            )}
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-semibold">
+                {t("files.title")}
+                {p.title ? ` · ${p.title}` : ""}
+              </h1>
+              <p className="truncate text-xs text-muted-foreground">{ready ? cwd || "/" : t(`files.state.${conn}`)}</p>
+            </div>
+          </div>
+        ) : (
+          <SheetHeader>
+            <SheetTitle>{t("files.title")}</SheetTitle>
+            <SheetDescription className="truncate text-xs">{ready ? cwd || "/" : t(`files.state.${conn}`)}</SheetDescription>
+          </SheetHeader>
+        )}
 
         {ready && (
           <div className="flex flex-wrap items-center gap-1 border-b px-3 py-2">
@@ -445,12 +497,11 @@ export function FilesSheet(p: FilesSheetProps) {
                 setConn("connecting");
               }}
               onRetry={() => {
+                ftRef.current?.close("closed");
+                ftRef.current = null;
                 setConn("idle");
                 setConnError("");
-                ftRef.current = null;
-                // reopen triggers a fresh connection
-                p.onOpenChange(false);
-                setTimeout(() => p.onOpenChange(true), 0);
+                setAttempt((a) => a + 1);
               }}
             />
           )}
@@ -560,7 +611,7 @@ export function FilesSheet(p: FilesSheetProps) {
             </ul>
           </div>
         )}
-      </SheetContent>
+      </Panel>
 
       <NameDialog
         state={nameDialog}
@@ -631,11 +682,11 @@ export function FilesSheet(p: FilesSheetProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Sheet>
+    </Shell>
   );
 }
 
-function ConnectPane({
+export function ConnectPane({
   state,
   error,
   wrong,
@@ -643,6 +694,8 @@ function ConnectPane({
   setSecret,
   onSubmit,
   onRetry,
+  passwordDesc,
+  connectingText,
 }: {
   state: ConnState;
   error: string;
@@ -651,6 +704,8 @@ function ConnectPane({
   setSecret: (v: string) => void;
   onSubmit: () => void;
   onRetry: () => void;
+  passwordDesc?: string;
+  connectingText?: string;
 }) {
   const { t } = useI18n();
   if (state === "password" || state === "twoFactor" || state === "waiting") {
@@ -663,7 +718,7 @@ function ConnectPane({
         }}
       >
         <p className="text-sm text-muted-foreground">
-          {state === "twoFactor" ? t("twoFactorDesc") : state === "waiting" ? t("waitingForApproval") : t("files.passwordDesc")}
+          {state === "twoFactor" ? t("twoFactorDesc") : state === "waiting" ? t("waitingForApproval") : (passwordDesc ?? t("files.passwordDesc"))}
         </p>
         {wrong && <p className="text-sm text-destructive">{state === "twoFactor" ? t("twoFactorWrong") : t("wrongPassword")}</p>}
         <Input
@@ -696,7 +751,7 @@ function ConnectPane({
   return (
     <div className="flex items-center justify-center gap-2 p-10 text-sm text-muted-foreground">
       <LoaderCircle className="h-4 w-4 animate-spin" />
-      {t("files.state.connecting")}
+      {connectingText ?? t("files.state.connecting")}
     </div>
   );
 }
