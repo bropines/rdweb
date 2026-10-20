@@ -1,6 +1,7 @@
 // A remote shell: RustDesk's "Terminal" (ConnType TERMINAL, peers 1.4.1+).
-// One link, one terminal: bytes both ways, resize, close. The peer runs
-// PowerShell/cmd on Windows and the user's shell elsewhere.
+// One link, one or more terminals (tabs, by terminal id; 0 opens with the
+// session): bytes both ways, resize, close. The peer runs PowerShell/cmd on
+// Windows and the user's shell elsewhere.
 
 import { isRetryable, PeerConnector, SessionError, toSessionError } from "./connector.js";
 import { parseServerKey } from "./crypto.js";
@@ -11,7 +12,7 @@ import type { Message, PeerInfo, TerminalResponse } from "./proto/session_pb.js"
 import type { CloseInfo, ServerConfig, SessionState } from "./types.js";
 import { inflateCapped } from "./zstd.js";
 
-const TERMINAL_ID = 0;
+const FIRST_TERMINAL = 0;
 const OPEN_TIMEOUT_MS = 20_000;
 const MAX_CHUNK = 4 << 20;
 
@@ -43,10 +44,10 @@ export interface TerminalEventMap {
   twoFactor: { wrong: boolean };
   waitingForApproval: Record<string, never>;
   connected: { peer: TerminalPeer; rememberedHash: Uint8Array | null };
-  /** Output of the shell (UTF-8 bytes, may split characters). */
-  data: { data: Uint8Array };
-  /** The shell exited. */
-  exit: { code: number };
+  /** Output of a shell (UTF-8 bytes, may split characters). */
+  data: { terminalId: number; data: Uint8Array };
+  /** A shell exited; the session closes when the last one did. */
+  exit: { terminalId: number; code: number };
   close: CloseInfo;
 }
 
@@ -58,16 +59,15 @@ export class TerminalSession {
   private stateValue: SessionState = "idle";
   private peerInfo: TerminalPeer | null = null;
   private closedInfo: CloseInfo | null = null;
-  private cols: number;
-  private rows: number;
-  private opened: { resolve: () => void; reject: (e: Error) => void } | null = null;
+  private readonly sizes = new Map<number, { cols: number; rows: number }>();
+  private readonly opening = new Map<number, { resolve: () => void; reject: (e: Error) => void }>();
+  private readonly open = new Set<number>();
 
   constructor(opts: TerminalOptions) {
     this.peerId = opts.peerId.replace(/\s+/g, "");
     if (!this.peerId) throw new SessionError("peer id is empty", "bad-config");
     parseServerKey(opts.server.key);
-    this.cols = opts.cols ?? 80;
-    this.rows = opts.rows ?? 24;
+    this.sizes.set(FIRST_TERMINAL, { cols: opts.cols ?? 80, rows: opts.rows ?? 24 });
     this.link = new PeerConnector(
       {
         peerId: this.peerId,
@@ -108,21 +108,13 @@ export class TerminalSession {
     return this.events.on(type, fn);
   }
 
-  /** Connects, logs in and opens the shell. May emit password/twoFactor/waitingForApproval while waiting. */
+  /** Connects, logs in and opens the first shell (terminal 0). May emit password/twoFactor/waitingForApproval while waiting. */
   async connect(): Promise<void> {
     if (this.stateValue !== "idle") throw new SessionError("connect() can only be called once", "state");
     try {
       await this.link.connect(this.abort.signal);
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new SessionError("the device did not open a terminal", "timeout")), OPEN_TIMEOUT_MS);
-        this.opened = {
-          resolve: () => (clearTimeout(timer), resolve()),
-          reject: (e) => (clearTimeout(timer), reject(e)),
-        };
-        this.link.send({
-          union: { case: "terminalAction", value: { union: { case: "open", value: { terminalId: TERMINAL_ID, rows: this.rows, cols: this.cols } } } },
-        });
-      });
+      const size = this.sizes.get(FIRST_TERMINAL)!;
+      await this.request(FIRST_TERMINAL, size.cols, size.rows);
       this.setState("connected");
       this.events.emit("connected", { peer: this.peerInfo!, rememberedHash: this.link.rememberedHash });
     } catch (e) {
@@ -130,6 +122,42 @@ export class TerminalSession {
       this.shutdown({ reason: err.message, remote: false, retryable: isRetryable(err) });
       throw err;
     }
+  }
+
+  /** Opens another shell on the same connection (a tab); ids are chosen by the caller, unique per session. */
+  async openTerminal(terminalId: number, cols: number, rows: number): Promise<void> {
+    if (this.stateValue !== "connected") throw new SessionError("not connected", "state");
+    if (this.open.has(terminalId) || this.opening.has(terminalId)) throw new SessionError(`terminal ${terminalId} is already open`, "state");
+    this.sizes.set(terminalId, { cols, rows });
+    await this.request(terminalId, cols, rows);
+  }
+
+  /** Ids of the open shells. */
+  get terminals(): number[] {
+    return [...this.open].sort((a, b) => a - b);
+  }
+
+  private request(terminalId: number, cols: number, rows: number): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.opening.delete(terminalId);
+        reject(new SessionError("the device did not open a terminal", "timeout"));
+      }, OPEN_TIMEOUT_MS);
+      this.opening.set(terminalId, {
+        resolve: () => {
+          clearTimeout(timer);
+          this.open.add(terminalId);
+          resolve();
+        },
+        reject: (e) => {
+          clearTimeout(timer);
+          reject(e);
+        },
+      });
+      this.link.send({
+        union: { case: "terminalAction", value: { union: { case: "open", value: { terminalId, rows, cols } } } },
+      });
+    });
   }
 
   login(password: string): Promise<void> {
@@ -140,33 +168,41 @@ export class TerminalSession {
     this.link.submitTwoFactor(code);
   }
 
-  /** Sends keystrokes / pasted text to the shell. */
-  write(data: string | Uint8Array): void {
-    if (this.stateValue !== "connected") return;
+  /** Sends keystrokes / pasted text to a shell (default: the first one). */
+  write(data: string | Uint8Array, terminalId = FIRST_TERMINAL): void {
+    if (this.stateValue !== "connected" || !this.open.has(terminalId)) return;
     const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
     if (!bytes.length) return;
     this.link.send({
-      union: { case: "terminalAction", value: { union: { case: "data", value: { terminalId: TERMINAL_ID, data: bytes, compressed: false } } } },
+      union: { case: "terminalAction", value: { union: { case: "data", value: { terminalId, data: bytes, compressed: false } } } },
     });
   }
 
-  resize(cols: number, rows: number): void {
+  resize(cols: number, rows: number, terminalId = FIRST_TERMINAL): void {
     cols = Math.max(1, Math.floor(cols));
     rows = Math.max(1, Math.floor(rows));
-    if (cols === this.cols && rows === this.rows) return;
-    this.cols = cols;
-    this.rows = rows;
-    if (this.stateValue !== "connected") return;
+    const old = this.sizes.get(terminalId);
+    if (old && old.cols === cols && old.rows === rows) return;
+    this.sizes.set(terminalId, { cols, rows });
+    if (this.stateValue !== "connected" || !this.open.has(terminalId)) return;
     this.link.send({
-      union: { case: "terminalAction", value: { union: { case: "resize", value: { terminalId: TERMINAL_ID, rows, cols } } } },
+      union: { case: "terminalAction", value: { union: { case: "resize", value: { terminalId, rows, cols } } } },
     });
+  }
+
+  /** Closes one shell (a tab); the session stays up. */
+  closeTerminal(terminalId: number): void {
+    if (!this.open.has(terminalId) || !this.link.isOpen) return;
+    this.link.send({ union: { case: "terminalAction", value: { union: { case: "close", value: { terminalId } } } } });
   }
 
   close(reason = "closed by user"): void {
     if (this.stateValue === "closed") return;
     if (this.link.isOpen) {
       try {
-        this.link.send({ union: { case: "terminalAction", value: { union: { case: "close", value: { terminalId: TERMINAL_ID } } } } });
+        for (const terminalId of this.open) {
+          this.link.send({ union: { case: "terminalAction", value: { union: { case: "close", value: { terminalId } } } } });
+        }
         this.link.send({ union: { case: "misc", value: { union: { case: "closeReason", value: reason } } } });
       } catch {
         /* ignore */
@@ -191,7 +227,8 @@ export class TerminalSession {
         if (u.value.union.case === "closeReason") {
           const reason = u.value.union.value || "closed by the remote side";
           this.link.rejectLogin(new SessionError(reason, "remote-closed"));
-          this.opened?.reject(new SessionError(reason, "remote-closed"));
+          for (const o of this.opening.values()) o.reject(new SessionError(reason, "remote-closed"));
+          this.opening.clear();
           this.shutdown({ reason, remote: true, retryable: false });
         }
         return;
@@ -203,11 +240,13 @@ export class TerminalSession {
   private onTerminal(r: TerminalResponse): void {
     const u = r.union;
     switch (u.case) {
-      case "opened":
-        if (u.value.success) this.opened?.resolve();
-        else this.opened?.reject(new SessionError(u.value.message || "the device could not open a terminal", "refused"));
-        this.opened = null;
+      case "opened": {
+        const o = this.opening.get(u.value.terminalId);
+        this.opening.delete(u.value.terminalId);
+        if (u.value.success) o?.resolve();
+        else o?.reject(new SessionError(u.value.message || "the device could not open a terminal", "refused"));
         return;
+      }
       case "data": {
         let data = u.value.data;
         if (u.value.compressed) {
@@ -217,21 +256,26 @@ export class TerminalSession {
             return;
           }
         }
-        if (data.length) this.events.emit("data", { data });
+        if (data.length) this.events.emit("data", { terminalId: u.value.terminalId, data });
         return;
       }
-      case "closed":
-        this.events.emit("exit", { code: u.value.exitCode });
-        this.shutdown({ reason: "the shell exited", remote: true, retryable: false });
+      case "closed": {
+        const id = u.value.terminalId;
+        if (!this.open.delete(id)) return;
+        this.events.emit("exit", { terminalId: id, code: u.value.exitCode });
+        if (this.open.size === 0 && this.opening.size === 0) this.shutdown({ reason: "the shell exited", remote: true, retryable: false });
         return;
-      case "error":
-        if (this.opened) {
-          this.opened.reject(new SessionError(u.value.message, "refused"));
-          this.opened = null;
+      }
+      case "error": {
+        const o = this.opening.get(u.value.terminalId);
+        if (o) {
+          this.opening.delete(u.value.terminalId);
+          o.reject(new SessionError(u.value.message, "refused"));
         } else {
-          this.events.emit("data", { data: new TextEncoder().encode(`\r\n[${u.value.message}]\r\n`) });
+          this.events.emit("data", { terminalId: u.value.terminalId, data: new TextEncoder().encode(`\r\n[${u.value.message}]\r\n`) });
         }
         return;
+      }
       default:
         return;
     }
@@ -257,8 +301,9 @@ export class TerminalSession {
   private shutdown(info: CloseInfo): void {
     if (this.stateValue === "closed") return;
     this.closedInfo = info;
-    this.opened?.reject(new SessionError(info.reason, "closed"));
-    this.opened = null;
+    for (const o of this.opening.values()) o.reject(new SessionError(info.reason, "closed"));
+    this.opening.clear();
+    this.open.clear();
     this.abort.abort();
     this.link.close(info.reason);
     this.setState("closed");

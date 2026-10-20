@@ -247,6 +247,21 @@ describe("Session", () => {
     s.key({ code: "KeyA", key: "a", down: true });
     const ke = peerLog.filter((m) => m.union.case === "keyEvent").at(-1)?.union.value as { union: { case: string; value: number } };
     expect(ke.union).toEqual({ case: "chr", value: 0x1e }); // Windows scan code for A
+    s.key({ code: "KeyA", key: "a", down: false });
+
+    // Cmd+V from a Mac: Cmd is the Windows key remotely; paste is Ctrl+V there
+    const before = peerLog.filter((m) => m.union.case === "keyEvent").length;
+    s.key({ code: "MetaLeft", key: "Meta", down: true });
+    s.pasteShortcut();
+    const keys = peerLog
+      .filter((m) => m.union.case === "keyEvent")
+      .slice(before)
+      .map((m) => {
+        const v = m.union.value as { union: { value: number }; down: boolean };
+        return `${v.union.value.toString(16)}${v.down ? "+" : "-"}`;
+      });
+    // Win down, Win up, Ctrl down, V down, V up, Ctrl up (Windows scan codes)
+    expect(keys).toEqual(["e05b+", "e05b-", "1d+", "2f+", "2f-", "1d-"]);
     s.close();
     expect(s.state).toBe("closed");
   });

@@ -40,13 +40,15 @@ web client, and the [standalone web client](#standalone-web-client) at
   negotiation, create, rename and delete. Progress events, cancellation,
   bounded memory (zstd blocks are inflated with a hard cap, unread data is
   limited) and WebSocket backpressure on uploads.
-- Terminal (`TerminalSession`, RustDesk 1.4.1+ peers): a remote shell over its
-  own connection (PowerShell/cmd on Windows, the user's shell elsewhere), with
+- Terminal (`TerminalSession`, RustDesk 1.4.1+ peers): remote shells in tabs
+  over one connection (`openTerminal`, `closeTerminal`) (PowerShell/cmd on Windows, the user's shell elsewhere), with
   resize and zstd-compressed output. The React terminal has its own settings
   (font installed on the computer, size) and shows prompt icons (oh-my-posh,
   starship) through a built-in Symbols Nerd Font loaded on demand.
 - Pasting (Ctrl/Cmd+V) or dropping files onto the remote screen uploads them
-  through the file manager; pasted text goes to the remote clipboard first.
+  through the file manager; pasted text goes to the remote clipboard, then the
+  remote side's own paste shortcut is pressed (Ctrl+V, or Cmd+V on macOS peers),
+  so Cmd+V from a Mac pastes on Windows too (`Session.pasteShortcut`).
 
 ## Usage
 

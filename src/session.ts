@@ -401,9 +401,29 @@ export class Session {
     this.keyInternal(ev);
   }
 
-  private keyInternal(ev: KeyInput): void {
+  /**
+   * Presses the remote side's paste shortcut (Cmd+V on macOS, Ctrl+V
+   * elsewhere), first releasing the other command modifier if the local
+   * shortcut left it down there (a Mac's Cmd is the Windows key remotely).
+   */
+  pasteShortcut(): void {
+    if (!this.canControl) return;
+    const mac = this.peerInfo?.os === "macos";
+    const want = mac ? ["MetaLeft", "MetaRight"] : ["ControlLeft", "ControlRight"];
+    const other = mac ? ["ControlLeft", "ControlRight"] : ["MetaLeft", "MetaRight"];
+    const name = (c: string) => (c.startsWith("Meta") ? "Meta" : "Control");
+    for (const c of other) if (this.pressedCodes.has(c)) this.keyInternal({ code: c, key: name(c), down: false }, false);
+    const held = want.some((c) => this.pressedCodes.has(c));
+    if (!held) this.keyInternal({ code: want[0]!, key: name(want[0]!), down: true }, false);
+    this.keyInternal({ code: "KeyV", key: "v", down: true }, false);
+    this.keyInternal({ code: "KeyV", key: "v", down: false }, false);
+    if (!held) this.keyInternal({ code: want[0]!, key: name(want[0]!), down: false }, false);
+  }
+
+  /** swap: apply the swapCtrlMeta setting (false for codes already meant for the remote side). */
+  private keyInternal(ev: KeyInput, swap = true): void {
     let code = ev.code;
-    if (this.settingsValue.swapCtrlMeta) code = swapCtrlMetaCode(code);
+    if (swap && this.settingsValue.swapCtrlMeta) code = swapCtrlMetaCode(code);
     this.trackModifier(code, ev.down);
     if (ev.down) this.pressedCodes.add(code);
     else this.pressedCodes.delete(code);
