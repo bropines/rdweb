@@ -18,6 +18,19 @@
       #bar select, #bar button { padding: 4px 6px; font-size: 12px; }
       #view { flex: 1; min-height: 0; }
       #status { font-size: 12px; color: var(--muted); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+      #files { flex: 1; min-height: 0; overflow: auto; padding: 0 0 8px; }
+      .fbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; border-bottom: 1px solid var(--border); background: var(--card); align-items: center; position: sticky; top: 0; }
+      .fbar button, .fbar input { padding: 4px 6px; font-size: 12px; }
+      .fpath { flex: 1 1 240px; }
+      .fbar label { display: inline-flex; gap: 4px; align-items: center; color: var(--fg); font-size: 12px; }
+      #fstatus { font-size: 12px; color: var(--muted); margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+      .ftable { width: 100%; border-collapse: collapse; font-size: 13px; }
+      .ftable th, .ftable td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+      .ftable td:first-child { white-space: normal; word-break: break-all; }
+      .ftable td button { padding: 2px 6px; margin-right: 2px; font-size: 12px; }
+      .ftable a { color: inherit; }
+      .fhidden { opacity: 0.6; }
+      .ftransfers { font-size: 12px; color: var(--muted); padding: 6px 8px; display: grid; gap: 2px; }
       .hidden { display: none !important; }
     </style>
   </head>
@@ -29,10 +42,12 @@
         <label>Relay (WebSocket, optional)<input name="relayUrl" placeholder="wss://example.com/ws/relay" /></label>
         <label>Server key<input name="key" required /></label>
         <label>Remote ID<input name="peer" required inputmode="numeric" /></label>
+        <label>Mode<select name="mode"><option value="desktop">Remote desktop</option><option value="files">Files</option></select></label>
         <button type="submit">Connect</button>
       </form>
       <div id="bar" class="hidden"></div>
       <div id="view" class="hidden"></div>
+      <div id="files" class="hidden"></div>
     </div>
     <script type="module" src="./main.ts"></script>
   </body>

@@ -1,11 +1,17 @@
 import { Session, Viewer, type SessionSettings } from "../src/index.js";
+import { startFiles } from "./files.js";
 
 const form = document.getElementById("connect") as HTMLFormElement;
 const bar = document.getElementById("bar")!;
 const view = document.getElementById("view")!;
+const files = document.getElementById("files")!;
 
-for (const k of ["idUrl", "relayUrl", "key", "peer"]) {
+for (const k of ["idUrl", "relayUrl", "key", "peer", "mode"]) {
   const el = form.elements.namedItem(k) as HTMLInputElement;
+  if (k === "mode") {
+    el.value = localStorage.getItem(`rdweb-demo-${k}`) || "desktop";
+    continue;
+  }
   el.value = localStorage.getItem(`rdweb-demo-${k}`) ?? "";
 }
 
@@ -28,11 +34,17 @@ function button(label: string, fn: () => void): HTMLButtonElement {
 form.onsubmit = async (e) => {
   e.preventDefault();
   const v = (k: string) => (form.elements.namedItem(k) as HTMLInputElement).value.trim();
-  for (const k of ["idUrl", "relayUrl", "key", "peer"]) localStorage.setItem(`rdweb-demo-${k}`, v(k));
+  for (const k of ["idUrl", "relayUrl", "key", "peer", "mode"]) localStorage.setItem(`rdweb-demo-${k}`, v(k));
   const relay = v("relayUrl");
+  const server = { rendezvousUrl: v("idUrl"), relayUrl: relay ? () => relay : undefined, key: v("key") };
+  if (v("mode") === "files") {
+    form.classList.add("hidden");
+    await startFiles(files, server, v("peer"));
+    return;
+  }
   const session = new Session({
     peerId: v("peer"),
-    server: { rendezvousUrl: v("idUrl"), relayUrl: relay ? () => relay : undefined, key: v("key") },
+    server,
     myName: "rdweb demo",
   });
   (window as unknown as { session: Session }).session = session;
