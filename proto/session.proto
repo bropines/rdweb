@@ -457,6 +457,8 @@ message OptionMessage {
   BoolOption disable_keyboard = 12;
   BoolOption follow_remote_cursor = 15;
   BoolOption follow_remote_window = 16;
+  // Terminal sessions: keep the shells running after a disconnect.
+  BoolOption terminal_persistent = 18;
   BoolOption show_my_cursor = 19;
 }
 

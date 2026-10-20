@@ -109,4 +109,40 @@ describe("TerminalSession", () => {
     s.closeTerminal(0);
     await vi.waitFor(() => expect(s.state).toBe("closed"));
   });
+
+  it("asks to keep the shells and reattaches with the service id", async () => {
+    resetNet({
+      onMessage: (m: Message, peer: FakePeer) => {
+        if (m.union.case !== "terminalAction" || m.union.value.union.case !== "open") return;
+        const id = m.union.value.union.value.terminalId;
+        peer.send({
+          union: {
+            case: "terminalResponse",
+            value: {
+              union: {
+                case: "opened",
+                value: { terminalId: id, success: true, serviceId: "svc-1", persistentSessions: id === 0 ? [3, 2] : [], replayTerminalOutput: true },
+              },
+            },
+          },
+        });
+        peer.send({ union: { case: "terminalResponse", value: { union: { case: "data", value: { terminalId: id, data: new TextEncoder().encode("old") } } } } });
+        peer.send({ union: { case: "terminalResponse", value: { union: { case: "data", value: { terminalId: id, data: new TextEncoder().encode("new") } } } } });
+      },
+    });
+    const s = new TerminalSession({ peerId: PEER_ID, server: serverConfig(), rememberedHash: sha256(PASSWORD, SALT), persistent: true, serviceId: "svc-1" });
+    const seen: string[] = [];
+    s.on("data", ({ terminalId, data, replay }) => seen.push(`${terminalId}:${new TextDecoder().decode(data)}:${replay}`));
+    await s.connect();
+    const login = net.loginRequests.at(-1)!;
+    expect(login.option?.terminalPersistent).toBe(2); // Yes
+    expect(login.union).toMatchObject({ case: "terminal", value: { serviceId: "svc-1" } });
+    expect(s.serviceId).toBe("svc-1");
+    expect(s.restorable).toEqual([2, 3]);
+    await s.openTerminal(2, 80, 24);
+    await vi.waitFor(() => expect(seen).toEqual(["0:old:true", "0:new:false", "2:old:true", "2:new:false"]));
+    // a reconnect keeps the shells; only Back (close without keepShells) ends them
+    s.close("reconnect", { keepShells: true });
+    expect(terminalActions().filter((a) => a.case === "close")).toEqual([]);
+  });
 });
