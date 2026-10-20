@@ -1,2 +1,6 @@
 import { defineConfig } from "vitest/config";
-export default defineConfig({ test: { include: ["test/**/*.test.ts"], environment: "node" } });
+// React tests opt into jsdom with a `// @vitest-environment jsdom` comment.
+export default defineConfig({
+  esbuild: { jsx: "automatic" },
+  test: { include: ["test/**/*.test.{ts,tsx}"], environment: "node" },
+});

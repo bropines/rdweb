@@ -1,0 +1,166 @@
+/*
+ * rdweb/react stylesheet for hosts that do not build the components with their
+ * own Tailwind (source: src/react/style.css, built by scripts/build-css.mjs).
+ * Tailwind's global preflight is not included; theme variables and base
+ * styles apply only inside elements with the "rdweb" class (the session shell
+ * and every dialog, sheet, menu, select and toast root rdweb renders).
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* shadcn/ui theme (light) */
+  .rdweb {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 221 83% 53%;
+    --radius: 0.5rem;
+  }
+
+  /* dark: a "dark" class on an ancestor (usually <html>) or on the element */
+  .dark .rdweb,
+  .rdweb.dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 5.5%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 5.5%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 240 10% 3.9%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 50.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 217 91% 60%;
+  }
+
+  /*
+   * Scoped subset of Tailwind CSS preflight (MIT, Tailwind Labs). :where()
+   * keeps the specificity of the original element selectors, so utilities and
+   * host overrides still win.
+   */
+  :where(.rdweb),
+  :where(.rdweb) *,
+  :where(.rdweb)::before,
+  :where(.rdweb)::after,
+  :where(.rdweb) ::before,
+  :where(.rdweb) ::after {
+    box-sizing: border-box;
+    border-width: 0;
+    border-style: solid;
+    border-color: hsl(var(--border));
+  }
+
+  :where(.rdweb) {
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+    tab-size: 4;
+    font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    font-feature-settings: normal;
+    -webkit-tap-highlight-color: transparent;
+    color: hsl(var(--foreground));
+  }
+
+  :where(.rdweb) :where(h1, h2, h3, h4, h5, h6) {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+
+  :where(.rdweb) :where(a) {
+    color: inherit;
+    text-decoration: inherit;
+  }
+
+  :where(.rdweb) :where(code, kbd, samp, pre) {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 1em;
+  }
+
+  :where(.rdweb) :where(button, input, optgroup, select, textarea) {
+    font-family: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    font-size: 100%;
+    font-weight: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    margin: 0;
+    padding: 0;
+  }
+
+  :where(.rdweb) :where(button, select) {
+    text-transform: none;
+  }
+
+  :where(.rdweb) :where(button, input[type="button"], input[type="reset"], input[type="submit"]) {
+    -webkit-appearance: button;
+    background-color: transparent;
+    background-image: none;
+  }
+
+  :where(.rdweb) :where(blockquote, dl, dd, h1, h2, h3, h4, h5, h6, hr, figure, p, pre, fieldset) {
+    margin: 0;
+  }
+
+  :where(.rdweb) :where(ol, ul, menu) {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  :where(.rdweb) :where(textarea) {
+    resize: vertical;
+  }
+
+  :where(.rdweb) :where(input, textarea)::placeholder {
+    opacity: 1;
+    color: #9ca3af;
+  }
+
+  :where(.rdweb) :where(button, [role="button"]) {
+    cursor: pointer;
+  }
+
+  :where(.rdweb) :where(:disabled) {
+    cursor: default;
+  }
+
+  :where(.rdweb) :where(img, svg, video, canvas) {
+    display: block;
+    vertical-align: middle;
+  }
+
+  :where(.rdweb) :where(img, video) {
+    max-width: 100%;
+    height: auto;
+  }
+
+  :where(.rdweb) :where([hidden]:not([hidden="until-found"])) {
+    display: none;
+  }
+}
