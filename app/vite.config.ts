@@ -10,7 +10,7 @@ const at = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 // talk to the configured servers over WebSocket and load nothing else.
 const CSP = [
   "default-src 'self'",
-  "script-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval'", // Opus decoding via WebAssembly where WebCodecs has no audio
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "media-src 'self' blob:",
