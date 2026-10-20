@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@ui/dropdown-menu";
 import { Input } from "@ui/input";
 import { Label } from "@ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ui/select";
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@ui/select";
 
 import { BUILD, COMMIT_URL, SHORT_COMMIT } from "./build";
 import { CheckDialog, type CheckTarget } from "./CheckDialog";
@@ -18,7 +18,11 @@ import { applyUpdate, useInstallState, useUpdateReady } from "./pwa";
 import { ServerEditor } from "./ServerEditor";
 import {
   clearAppData,
+  confirmPublicServer,
   endpoints,
+  isPublicServer,
+  PUBLIC_SERVER,
+  publicServerConfirmed,
   loadRecentDevices,
   loadServers,
   pushRecentDevice,
@@ -161,17 +165,29 @@ function Home(p: HomeProps) {
   const installState = useInstallState();
   const [installOpen, setInstallOpen] = useState(false);
   const [checking, setChecking] = useState<CheckTarget | null>(null);
+  // own servers first; RustDesk's public server when none (or when chosen)
+  const options = useMemo(() => [...p.servers, PUBLIC_SERVER], [p.servers]);
   const [serverId, setServerId] = useState<string>(() => {
     const last = readLastServer();
-    return p.servers.find((s) => s.id === last)?.id ?? p.servers[0]?.id ?? "";
+    return options.find((s) => s.id === last)?.id ?? p.servers[0]?.id ?? PUBLIC_SERVER.id;
   });
   const [peerId, setPeerId] = useState(p.initialPeer);
-  const selected = p.servers.find((s) => s.id === serverId) ?? p.servers[0];
+  const selected = options.find((s) => s.id === serverId) ?? p.servers[0] ?? PUBLIC_SERVER;
+  const [pendingPublic, setPendingPublic] = useState<{ server: ServerEntry; id: string; mode?: "files" | "terminal" } | null>(null);
+
+  /** Connects; the first time through the public server only after the user confirmed it. */
+  const connect = (server: ServerEntry, id: string, mode?: "files" | "terminal") => {
+    if (isPublicServer(server) && !publicServerConfirmed()) {
+      setPendingPublic({ server, id, mode });
+      return;
+    }
+    p.onConnect(server, id, mode);
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const id = peerId.replace(/\s+/g, "");
-    if (selected && id) p.onConnect(selected, id);
+    if (selected && id) connect(selected, id);
   };
 
   const ThemeIcon = p.theme === "dark" ? Moon : p.theme === "light" ? Sun : Monitor;
@@ -233,15 +249,6 @@ function Home(p: HomeProps) {
       <main className="mx-auto grid w-full max-w-5xl flex-1 items-start gap-4 px-4 py-6 grid-cols-1 md:grid-cols-2">
         <section className="space-y-4 rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
           <h1 className="text-lg font-semibold">{t("connect.title")}</h1>
-          {p.servers.length === 0 ? (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">{t("connect.noServers")}</p>
-              <Button onClick={() => setEditing({})}>
-                <Plus className="h-4 w-4" />
-                {t("servers.add")}
-              </Button>
-            </div>
-          ) : (
             <form onSubmit={submit} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="cn-server">{t("connect.server")}</Label>
@@ -255,6 +262,8 @@ function Home(p: HomeProps) {
                         {s.name}
                       </SelectItem>
                     ))}
+                    {p.servers.length > 0 && <SelectSeparator />}
+                    <SelectItem value={PUBLIC_SERVER.id}>{t("public.option")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -270,6 +279,14 @@ function Home(p: HomeProps) {
                   placeholder="123 456 789"
                 />
               </div>
+              {isPublicServer(selected) && (
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-800 dark:text-amber-300">
+                  {t("public.hint")}{" "}
+                  <button type="button" className="font-medium underline underline-offset-2" onClick={() => setEditing({})}>
+                    {t("servers.add")}
+                  </button>
+                </p>
+              )}
               <Button type="submit" className="w-full" disabled={!peerId.trim() || !selected}>
                 {t("connect.button")}
               </Button>
@@ -282,7 +299,7 @@ function Home(p: HomeProps) {
                     disabled={!peerId.trim() || !selected}
                     onClick={() => {
                       const id = peerId.replace(/\s+/g, "");
-                      if (selected && id) p.onConnect(selected, id, m);
+                      if (selected && id) connect(selected, id, m);
                     }}
                   >
                     {m === "files" ? <FolderOpen className="h-4 w-4" /> : <SquareTerminal className="h-4 w-4" />}
@@ -292,13 +309,12 @@ function Home(p: HomeProps) {
               </div>
               <p className="text-xs text-muted-foreground">{t("connect.hint")}</p>
             </form>
-          )}
           {p.recent.length > 0 && (
             <div className="space-y-1.5">
               <div className="text-xs text-muted-foreground">{t("connect.recent")}</div>
               <ul className="flex flex-wrap gap-1.5">
                 {p.recent.map((r) => {
-                  const server = p.servers.find((s) => s.id === r.serverId);
+                  const server = options.find((s) => s.id === r.serverId);
                   return (
                     <li key={`${r.serverId}/${r.id}`} className="max-w-full">
                       <Button
@@ -308,10 +324,10 @@ function Home(p: HomeProps) {
                         className="h-auto max-w-full flex-col items-start gap-0 py-1"
                         disabled={!server}
                         title={server ? undefined : t("connect.unknownServer")}
-                        onClick={() => server && p.onConnect(server, r.id)}
+                        onClick={() => server && connect(server, r.id)}
                       >
                         <span className="max-w-full truncate">{r.name ? `${r.name} · ${r.id}` : r.id}</span>
-                        <span className="max-w-full truncate text-[10px] font-normal text-muted-foreground">{server?.name ?? "—"}</span>
+                        <span className="max-w-full truncate text-[10px] font-normal text-muted-foreground">{server ? (isPublicServer(server) ? t("public.short") : server.name) : "—"}</span>
                       </Button>
                     </li>
                   );
@@ -375,6 +391,35 @@ function Home(p: HomeProps) {
         </a>{" "}
         · MIT · <BuildInfo />
       </footer>
+
+      <Dialog open={!!pendingPublic} onOpenChange={(o) => !o && setPendingPublic(null)}>
+        <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md" closeLabel={t("about.close")}>
+          <DialogHeader>
+            <DialogTitle>{t("public.title")}</DialogTitle>
+            <DialogDescription>{t("public.desc")}</DialogDescription>
+          </DialogHeader>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>{t("public.p1")}</li>
+            <li>{t("public.p2")}</li>
+            <li>{t("public.p3")}</li>
+          </ul>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setPendingPublic(null)}>
+              {t("editor.cancel")}
+            </Button>
+            <Button
+              onClick={() => {
+                const pend = pendingPublic;
+                setPendingPublic(null);
+                confirmPublicServer();
+                if (pend) p.onConnect(pend.server, pend.id, pend.mode);
+              }}
+            >
+              {t("public.accept")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ServerEditor
         editing={editing}

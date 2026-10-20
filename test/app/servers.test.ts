@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { decodeConfigString, endpoints, entryFromConfig, hostOf, isIpHost, keyProblem, toServerConfig } from "../../app/src/servers.js";
+import { decodeConfigString, endpoints, entryFromConfig, hostOf, isIpHost, keyProblem, PUBLIC_SERVER, toServerConfig } from "../../app/src/servers.js";
 
 const key = Buffer.alloc(32, 7).toString("base64");
 // What RD Panel's Server page and the RustDesk client export: URL-safe base64 (no padding) of the JSON, reversed.
@@ -85,5 +85,14 @@ describe("endpoints", () => {
   it("validates the server key", () => {
     expect(keyProblem(key)).toBeNull();
     expect(keyProblem("abc")).toMatch(/bytes|base64/);
+  });
+});
+
+describe("RustDesk public server preset", () => {
+  it("reaches the relay the ID server announces", () => {
+    const c = toServerConfig(PUBLIC_SERVER);
+    expect(c.rendezvousUrl).toBe("wss://rs-ny.rustdesk.com/ws/id");
+    expect(c.relayUrl?.("rs-ny.rustdesk.com:21117")).toBe("wss://rs-ny.rustdesk.com/ws/relay");
+    expect(keyProblem(c.key)).toBeNull();
   });
 });

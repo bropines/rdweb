@@ -1,5 +1,5 @@
 // Saved servers, RustDesk config strings and WebSocket endpoint derivation.
-import { parseServerKey, relayUrlNextTo, type ServerConfig } from "rdweb";
+import { announcedRelayUrl, parseServerKey, relayUrlNextTo, type ServerConfig } from "rdweb";
 
 export interface ServerEntry {
   id: string;
@@ -127,7 +127,42 @@ export function endpoints(address: string, relay?: string): Endpoints {
   return { rendezvousUrl: `wss://${host}/ws/id`, relayUrl: relayUrl || `wss://${host}/ws/relay` };
 }
 
+/**
+ * RustDesk's public server (run by RustDesk, not by rdweb), used when no
+ * server of one's own was added. Experimental in browsers: its ID server
+ * serves WebSocket at /ws/id; relays are the ones it announces.
+ */
+export const PUBLIC_SERVER: ServerEntry = {
+  id: "rustdesk-public",
+  name: "RustDesk public server",
+  address: "wss://rs-ny.rustdesk.com/ws/id",
+  key: "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=",
+};
+
+export const isPublicServer = (s: Pick<ServerEntry, "id"> | null | undefined): boolean => s?.id === PUBLIC_SERVER.id;
+
+const PUBLIC_OK_KEY = "rdweb.app.publicServerOk";
+
+/** The user confirmed once that sessions may go through RustDesk's public server. */
+export function publicServerConfirmed(): boolean {
+  try {
+    return localStorage.getItem(PUBLIC_OK_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function confirmPublicServer(): void {
+  try {
+    localStorage.setItem(PUBLIC_OK_KEY, "1");
+  } catch {
+    /* storage unavailable: asked again next time */
+  }
+}
+
 export function toServerConfig(s: ServerEntry): ServerConfig {
+  // the public network assigns relays per session: reach the announced one
+  if (isPublicServer(s)) return { rendezvousUrl: s.address, relayUrl: announcedRelayUrl, key: s.key };
   const e = endpoints(s.address, s.relay);
   return { rendezvousUrl: e.rendezvousUrl, relayUrl: () => e.relayUrl, key: s.key.trim() };
 }
