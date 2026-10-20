@@ -227,6 +227,8 @@ describe("Session", () => {
     expect(s.state).toBe("connected");
     expect(events).toEqual(["password:false"]);
     expect(s.peer?.os).toBe("windows");
+    expect(s.connection.rendezvousUrl).toMatch(/^wss?:/);
+    expect(s.connection.relayUrl).toMatch(/^wss?:/);
     expect(s.display?.width).toBe(1920);
     expect(remembered).not.toBeNull();
     expect(Buffer.from(remembered!).toString("hex")).toBe(Buffer.from(sha256(PASSWORD, SALT)).toString("hex"));

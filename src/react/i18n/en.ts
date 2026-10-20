@@ -150,6 +150,7 @@ export const en = {
     refused: "The connection was refused: {{detail}}",
   },
   toolbar: {
+    connection: "Connection details",
     show: "Show toolbar",
     drag: "Drag to move",
     more: "More",
@@ -160,6 +161,20 @@ export const en = {
     back: "Leave session",
     reset: "Reset",
     nextDisplay: "Next monitor ({{n}} of {{total}})",
+  },
+  info: {
+    title: "Connection",
+    desc: "The web client always connects through the relay.",
+    device: "Device",
+    route: "Route",
+    relayTls: "Relay, WebSocket over TLS",
+    relayPlain: "Relay, WebSocket without TLS",
+    relay: "Relay server",
+    idServer: "ID server",
+    encryption: "Encryption",
+    e2e: "End to end with the device (its key is vouched for by the server)",
+    video: "Video",
+    delay: "Delay",
   },
   terminal: {
     title: "Terminal",

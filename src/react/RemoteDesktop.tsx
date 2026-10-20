@@ -268,6 +268,7 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
   const [tfaWrong, setTfaWrong] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [incoming, setIncoming] = useState<UploadItem[] | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [keyboardBar, setKeyboardBar] = useState(false);
@@ -636,12 +637,15 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
           title={title}
           subtitle={connected && peer ? `${peerId} · ${peer.platform}` : statusText}
           status={connected ? "ok" : closed || error ? "error" : "busy"}
+          onStatus={connected ? () => setInfoOpen(true) : undefined}
+          touch={touch}
           canCollapse={connected && !settingsOpen && !filesOpen && dialog === "none"}
           onDisconnect={() => s?.close()}
           onLeave={onLeave}
           ended={!!(closed || error)}
         />
 
+        <ConnectionInfo open={infoOpen && connected} onOpenChange={setInfoOpen} session={s} peer={peer} stats={stats} />
         {prefs.view.showStats && stats && connected && (
           <div className="pointer-events-none absolute left-2 top-2 rounded bg-black/70 px-2 py-1 font-mono text-[11px] leading-snug text-white/90">
             <div>
@@ -993,6 +997,61 @@ function TextDialog({
             {submitLabel}
           </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Connection details, like the desktop client's connection indicator. */
+function ConnectionInfo({
+  open,
+  onOpenChange,
+  session,
+  peer,
+  stats,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  session: Session | null | undefined;
+  peer: PeerSummary | null;
+  stats: SessionStats | null;
+}) {
+  const { t } = useI18n();
+  const c = session?.connection;
+  const host = (u: string | undefined) => {
+    try {
+      return u ? new URL(u).host : "—";
+    } catch {
+      return "—";
+    }
+  };
+  const rows: [string, string][] = [
+    [t("info.device"), peer ? [peer.hostname, peer.platform, peer.version && `RustDesk ${peer.version}`].filter(Boolean).join(" · ") : "—"],
+    [t("info.route"), c?.tls ? t("info.relayTls") : t("info.relayPlain")],
+    [t("info.relay"), host(c?.relayUrl)],
+    [t("info.idServer"), host(c?.rendezvousUrl)],
+    [t("info.encryption"), t("info.e2e")],
+    [
+      t("info.video"),
+      stats?.codec ? `${stats.codec.toUpperCase()}${stats.chroma444 ? " 4:4:4" : ""} · ${stats.width}×${stats.height} · ${stats.fps} fps · ${stats.kbps} kbps` : "—",
+    ],
+    [t("info.delay"), stats ? `${stats.delayMs} ms` : "—"],
+  ];
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className={cn(SCOPE, "max-w-[calc(100vw-2rem)] sm:max-w-md")} closeLabel={t("common.close")}>
+        <DialogHeader>
+          <DialogTitle>{t("info.title")}</DialogTitle>
+          <DialogDescription>{t("info.desc")}</DialogDescription>
+        </DialogHeader>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+          {rows.map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className="text-muted-foreground">{k}</dt>
+              <dd className="min-w-0 break-words font-medium">{v}</dd>
+            </div>
+          ))}
+        </dl>
       </DialogContent>
     </Dialog>
   );
