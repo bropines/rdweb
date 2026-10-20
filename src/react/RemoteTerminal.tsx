@@ -1,4 +1,4 @@
-import { ChevronLeft, RefreshCw, Settings2 } from "lucide-react";
+import { ArrowDown, ChevronLeft, RefreshCw, Settings2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { TerminalSession } from "../terminal.js";
@@ -93,7 +93,7 @@ function injectXtermCss(): void {
   if (typeof document === "undefined" || document.getElementById("rdweb-xterm-css")) return;
   const style = document.createElement("style");
   style.id = "rdweb-xterm-css";
-  style.textContent = XTERM_CSS;
+  style.textContent = `${XTERM_CSS}\n.rdweb .xterm .xterm-viewport { scrollbar-color: rgba(255,255,255,.3) transparent; scrollbar-width: thin; }`;
   document.head.appendChild(style);
 }
 
@@ -111,6 +111,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const storageKeyRef = useRef(props.storageKey ?? DEFAULT_STORAGE_KEY);
   const [prefs, setPrefs] = useState<TerminalPrefs>(() => loadTerminalPrefs(storageKeyRef.current));
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [scrolledUp, setScrolledUp] = useState(false);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const fitRef = useRef<{ fit(): void } | null>(null);
   const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
@@ -133,7 +134,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         cursorBlink: true,
         fontFamily: fontStack(initial),
         fontSize: initial.fontSize,
-        scrollback: 5000,
+        scrollback: 10000,
         theme: { background: "#0a0a0a" },
       });
       const fit = new FitAddon();
@@ -173,6 +174,26 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         if (!disposed && opened) setEnded(info.reason);
       });
       term.onData((d) => s.write(d));
+      // Shift+PageUp/PageDown/Home/End page through the scrollback (like most terminals)
+      term.attachCustomKeyEventHandler((e) => {
+        if (e.type !== "keydown" || !e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || !term) return true;
+        const act: Record<string, () => void> = {
+          PageUp: () => term!.scrollPages(-1),
+          PageDown: () => term!.scrollPages(1),
+          Home: () => term!.scrollToTop(),
+          End: () => term!.scrollToBottom(),
+        };
+        const fn = act[e.key];
+        if (!fn) return true;
+        fn();
+        return false;
+      });
+      const updateScrolled = () => {
+        const b = term?.buffer.active;
+        if (b) setScrolledUp(b.viewportY < b.baseY);
+      };
+      term.onScroll(updateScrolled);
+      term.onWriteParsed(updateScrolled);
       ro = new ResizeObserver(() => {
         try {
           fit.fit();
@@ -237,6 +258,21 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       <TerminalSettings open={settingsOpen} onOpenChange={setSettingsOpen} prefs={prefs} onApply={(p) => void applyPrefs(p)} />
       <div className="relative min-h-0 flex-1 p-1.5">
         <div ref={hostRef} className="h-full w-full" />
+        {scrolledUp && conn === "ready" && !ended && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="absolute bottom-3 right-4 shadow-lg"
+            aria-label={t("terminal.toBottom")}
+            title={t("terminal.toBottom")}
+            onClick={() => {
+              termRef.current?.scrollToBottom();
+              termRef.current?.focus();
+            }}
+          >
+            <ArrowDown className="h-4 w-4" />
+          </Button>
+        )}
         {(overlay || ended) && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-4">
             <div className="w-full max-w-sm rounded-lg border bg-background text-foreground">
