@@ -720,7 +720,10 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
                 {choices.map((c) => (
                   <li key={c.serviceId} className="flex flex-wrap items-center gap-2 rounded-md border p-2.5">
                     <div className="min-w-0 flex-1 text-sm">
-                      <div className="truncate font-medium">{t("terminal.saved.item", { count: c.tabs })}</div>
+                      <div className="truncate font-medium">
+                        {c.hostname ? `${c.hostname} · ` : ""}
+                        {t("terminal.saved.item", { count: c.tabs })}
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         {t("terminal.saved.when", { time: new Date(c.updatedAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) })}
                       </div>
