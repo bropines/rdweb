@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { decodeConfigString, endpoints, entryFromConfig, hostOf, keyProblem, toServerConfig } from "../../app/src/servers.js";
+import { decodeConfigString, endpoints, entryFromConfig, hostOf, isIpHost, keyProblem, toServerConfig } from "../../app/src/servers.js";
 
 const key = Buffer.alloc(32, 7).toString("base64");
 // What RD Panel's Server page and the RustDesk client export: URL-safe base64 (no padding) of the JSON, reversed.
@@ -33,6 +33,29 @@ describe("RustDesk config strings", () => {
     });
     expect(entryFromConfig({ host: "id.example.com", relay: "relay.example.com", key, api: "" }).relay).toBe("relay.example.com");
     expect(entryFromConfig({ host: "", relay: "", key, api: "https://panel.example.com" }).address).toBe("panel.example.com");
+    // a relay given as an IP address is a TCP endpoint, not a TLS proxy
+    expect(entryFromConfig({ host: "id.example.com", relay: "203.0.113.5:21117", key, api: "" }).relay).toBeUndefined();
+  });
+
+  it("prefers the HTTPS API host: hbbs and hbbr addresses are TCP endpoints for native clients", () => {
+    // what RD Panel exports when hbbs is published by IP and the relay by another name
+    expect(entryFromConfig({ host: "203.0.113.5", relay: "desk.example.com:21117", key, api: "https://panel.example.com" })).toEqual({
+      name: "panel.example.com",
+      address: "panel.example.com",
+      relay: undefined,
+      key,
+    });
+    expect(entryFromConfig({ host: "id.example.com", relay: "", key, api: "http://panel.example.com" }).address).toBe("id.example.com");
+    expect(entryFromConfig({ host: "id.example.com", relay: "", key, api: "https://203.0.113.5" }).address).toBe("id.example.com");
+  });
+
+  it("recognises IP addresses", () => {
+    expect(isIpHost("203.0.113.5")).toBe(true);
+    expect(isIpHost("203.0.113.5:8443")).toBe(true);
+    expect(isIpHost("[2001:db8::1]:8443")).toBe(true);
+    expect(isIpHost("2001:db8::1")).toBe(true);
+    expect(isIpHost("rd.example.com")).toBe(false);
+    expect(isIpHost("rd.example.com:8443")).toBe(false);
   });
 });
 
@@ -49,7 +72,10 @@ describe("endpoints", () => {
   });
 
   it("uses WebSocket URLs as given", () => {
-    expect(endpoints("wss://rd.example.com/custom/id")).toEqual({ rendezvousUrl: "wss://rd.example.com/custom/id", relayUrl: undefined });
+    // without a relay, hbbr is reached next to hbbs, not at the relay hbbs announces
+    expect(endpoints("wss://rd.example.com/custom/id")).toEqual({ rendezvousUrl: "wss://rd.example.com/custom/id", relayUrl: "wss://rd.example.com/ws/relay" });
+    expect(endpoints("wss://rd.example.com:8443/ws/id")).toEqual({ rendezvousUrl: "wss://rd.example.com:8443/ws/id", relayUrl: "wss://rd.example.com:8443/ws/relay" });
+    expect(toServerConfig({ id: "2", name: "y", address: "wss://a.example/ws/id", key }).relayUrl?.("other.example:21117")).toBe("wss://a.example/ws/relay");
     const s = toServerConfig({ id: "1", name: "x", address: "wss://a.example/ws/id", relay: "wss://b.example/r", key: ` ${key} ` });
     expect(s.rendezvousUrl).toBe("wss://a.example/ws/id");
     expect(s.relayUrl?.("b.example:21117")).toBe("wss://b.example/r");

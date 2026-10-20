@@ -14,7 +14,8 @@ import { TransportError, WsTransport } from "./transport.js";
 export class RendezvousError extends Error {
   constructor(
     message: string,
-    readonly code: "offline" | "not-found" | "key-mismatch" | "refused" | "login-required" | "timeout" | "network",
+    /** unreachable: the WebSocket to the ID or relay server could not be opened at all. */
+    readonly code: "offline" | "not-found" | "key-mismatch" | "refused" | "login-required" | "timeout" | "network" | "unreachable",
   ) {
     super(message);
     this.name = "RendezvousError";
@@ -47,7 +48,8 @@ export async function requestRelay(opts: RendezvousOptions): Promise<RelayTicket
   try {
     t = await WsTransport.open(opts.url, { timeoutMs: 10_000, signal: opts.signal });
   } catch (e) {
-    throw new RendezvousError(`cannot reach the ID server: ${(e as Error).message}`, "network");
+    if (e instanceof TransportError && e.code === "aborted") throw e;
+    throw new RendezvousError(`cannot reach the ID server: ${(e as Error).message}`, "unreachable");
   }
   try {
     const req = create(RendezvousMessageSchema, {
@@ -145,7 +147,8 @@ export async function joinRelay(
   try {
     t = await WsTransport.open(url, { timeoutMs: 10_000, signal });
   } catch (e) {
-    throw new RendezvousError(`cannot reach the relay server: ${(e as Error).message}`, "network");
+    if (e instanceof TransportError && e.code === "aborted") throw e;
+    throw new RendezvousError(`cannot reach the relay server: ${(e as Error).message}`, "unreachable");
   }
   const req = create(RendezvousMessageSchema, {
     union: {

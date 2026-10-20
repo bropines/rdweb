@@ -53,7 +53,30 @@ function randomSessionId(): bigint {
   return v & 0x7fff_ffff_ffff_ffffn;
 }
 
-export function defaultRelayUrl(relayServer: string): string {
+/**
+ * The hbbr WebSocket URL next to an hbbs one, the default relay endpoint:
+ * wss://host/ws/id -> wss://host/ws/relay, a direct ws://host:21118 ->
+ * ws://host:21119, any other path -> /ws/relay on the same host.
+ */
+export function relayUrlNextTo(rendezvousUrl: string): string {
+  try {
+    const u = new URL(rendezvousUrl);
+    u.search = "";
+    u.hash = "";
+    if (u.port === "21118") u.port = "21119";
+    else u.pathname = /\/ws\/id\/?$/.test(u.pathname) ? u.pathname.replace(/\/ws\/id\/?$/, "/ws/relay") : "/ws/relay";
+    return u.toString();
+  } catch {
+    return rendezvousUrl.replace(/\/ws\/id\/?$/, "/ws/relay");
+  }
+}
+
+/**
+ * Maps the relay that hbbs announces (a TCP host:port for native clients) to
+ * wss://<host>/ws/relay, or ws(s)://<ip>:<port + 2> for IP addresses. Opt in
+ * with `relayUrl: announcedRelayUrl` when every relay has its own TLS proxy.
+ */
+export function announcedRelayUrl(relayServer: string): string {
   const secure = typeof location === "undefined" || location.protocol === "https:";
   let host = relayServer;
   let port = "";
@@ -82,7 +105,7 @@ export function toSessionError(e: unknown): SessionError {
 }
 
 export function isRetryable(e: SessionError): boolean {
-  return e.code === "network" || e.code === "timeout" || e.code === "offline";
+  return e.code === "network" || e.code === "unreachable" || e.code === "timeout" || e.code === "offline";
 }
 
 type LoginInit = Exclude<MessageInitShape<typeof LoginRequestSchema>, LoginRequest>;
@@ -181,7 +204,7 @@ export class PeerConnector {
     const peerLongTerm = verifyPeerLongTermKey(ticket.signedPeerKey, serverKey, this.peerId);
 
     this.ev.state("relay");
-    const relayUrl = (server.relayUrl ?? defaultRelayUrl)(ticket.relayServer);
+    const relayUrl = server.relayUrl ? server.relayUrl(ticket.relayServer) : relayUrlNextTo(server.rendezvousUrl);
     const relay = await joinRelay(relayUrl, ticket.uuid, this.peerId, server.key.trim(), signal, this.cfg.connType);
     if (this.closed) {
       relay.close("closed");

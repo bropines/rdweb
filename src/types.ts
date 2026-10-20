@@ -55,8 +55,9 @@ export interface ServerConfig {
   rendezvousUrl: string;
   /**
    * Maps the relay announced by hbbs (host:port, TCP) to a WebSocket URL.
-   * Defaults to wss://<host>/ws/relay for host names and ws(s)://<ip>:21119
-   * for IP addresses.
+   * Defaults to the same host as rendezvousUrl (/ws/id -> /ws/relay, see
+   * relayUrlNextTo): the announced relay is a TCP address for native
+   * clients and rarely serves TLS. `announcedRelayUrl` maps it instead.
    */
   relayUrl?: (relayServer: string) => string;
   /** The server's public key (base64 Ed25519, id_ed25519.pub). Required. */

@@ -8,7 +8,7 @@ import { Label } from "@ui/label";
 import { Textarea } from "@ui/misc";
 
 import { useAppI18n } from "./i18n";
-import { decodeConfigString, endpoints, entryFromConfig, hostOf, keyProblem, newServerId, type ServerEntry } from "./servers";
+import { decodeConfigString, endpoints, entryFromConfig, hostOf, isIpHost, keyProblem, newServerId, type ServerEntry } from "./servers";
 
 interface Props {
   /** null: closed; {}: new server; an entry: edit it. */
@@ -25,7 +25,6 @@ export function ServerEditor({ editing, onClose, onSave }: Props) {
   const [key, setKey] = useState("");
   const [config, setConfig] = useState("");
   const [configError, setConfigError] = useState(false);
-  const [apiHost, setApiHost] = useState("");
   const [touched, setTouched] = useState(false);
 
   useEffect(() => {
@@ -36,7 +35,6 @@ export function ServerEditor({ editing, onClose, onSave }: Props) {
     setKey(editing.key ?? "");
     setConfig("");
     setConfigError(false);
-    setApiHost("");
     setTouched(false);
   }, [editing]);
 
@@ -48,8 +46,6 @@ export function ServerEditor({ editing, onClose, onSave }: Props) {
       setAddress(e.address);
       setRelay(e.relay ?? "");
       if (e.key) setKey(e.key);
-      const api = hostOf(cfg.api);
-      setApiHost(/^https:\/\//i.test(cfg.api) && api && api !== e.address ? api : "");
       setConfig("");
       setConfigError(false);
       toast.success(t("editor.imported"));
@@ -61,6 +57,7 @@ export function ServerEditor({ editing, onClose, onSave }: Props) {
   const keyErr = key.trim() ? keyProblem(key) : null;
   const addressOk = !!address.trim() && (/^wss?:\/\//i.test(address.trim()) || !!hostOf(address));
   const resolved = addressOk ? endpoints(address, relay) : null;
+  const ipAddress = addressOk && isIpHost(hostOf(address));
   const valid = addressOk && !!key.trim() && !keyErr;
 
   const save = (e: FormEvent) => {
@@ -112,23 +109,6 @@ export function ServerEditor({ editing, onClose, onSave }: Props) {
             {configError && <p className="text-xs text-destructive">{t("editor.importFailed")}</p>}
           </div>
 
-          {apiHost && (
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 p-3 text-xs">
-              <span className="min-w-0 flex-1">{t("editor.apiHost", { host: apiHost })}</span>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setAddress(apiHost);
-                  setApiHost("");
-                }}
-              >
-                {t("editor.useApiHost", { host: apiHost })}
-              </Button>
-            </div>
-          )}
-
           <div className="space-y-1.5">
             <Label htmlFor="srv-name">{t("editor.name")}</Label>
             <Input id="srv-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("editor.namePlaceholder")} autoComplete="off" />
@@ -146,6 +126,7 @@ export function ServerEditor({ editing, onClose, onSave }: Props) {
               aria-invalid={touched && !addressOk}
             />
             {touched && !addressOk && <p className="text-xs text-destructive">{t("editor.addressRequired")}</p>}
+            {ipAddress && <p className="text-xs text-amber-600 dark:text-amber-400">{t("editor.ipWarning")}</p>}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="srv-relay">{t("editor.relay")}</Label>
@@ -162,7 +143,7 @@ export function ServerEditor({ editing, onClose, onSave }: Props) {
           </div>
           {resolved && (
             <p className="break-all rounded-md bg-muted px-3 py-2 font-mono text-[11px] text-muted-foreground">
-              {resolved.relayUrl ? t("editor.resolved", { id: resolved.rendezvousUrl, relay: resolved.relayUrl }) : t("editor.resolvedNoRelay", { id: resolved.rendezvousUrl })}
+              {t("editor.resolved", { id: resolved.rendezvousUrl, relay: resolved.relayUrl })}
             </p>
           )}
           <div className="space-y-1.5">

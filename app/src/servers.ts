@@ -1,5 +1,5 @@
 // Saved servers, RustDesk config strings and WebSocket endpoint derivation.
-import { parseServerKey, type ServerConfig } from "rdweb";
+import { parseServerKey, relayUrlNextTo, type ServerConfig } from "rdweb";
 
 export interface ServerEntry {
   id: string;
@@ -103,26 +103,33 @@ export function hostOf(input: string): string {
 
 const isWsUrl = (s: string) => /^wss?:\/\//i.test(s.trim());
 
-export interface Endpoints {
-  rendezvousUrl: string;
-  /** Undefined: the library maps the relay announced by hbbs to wss://<relay host>/ws/relay. */
-  relayUrl?: string;
+/** An IPv4 or IPv6 literal (with or without a port): browsers rarely get a valid certificate for one. */
+export function isIpHost(host: string): boolean {
+  const h = host.trim().replace(/^\[(.*)\](:\d+)?$/, "$1").replace(/^(\d+\.\d+\.\d+\.\d+):\d+$/, "$1");
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(h) || (h.includes(":") && /^[0-9a-f:.]+$/i.test(h));
 }
 
-/** WebSocket endpoints of a server entry: a host name gets /ws/id and /ws/relay over TLS. */
+export interface Endpoints {
+  rendezvousUrl: string;
+  relayUrl: string;
+}
+
+/**
+ * WebSocket endpoints of a server entry: a host name gets /ws/id and
+ * /ws/relay over TLS; without a relay, hbbr is reached next to hbbs.
+ */
 export function endpoints(address: string, relay?: string): Endpoints {
   const a = address.trim();
   const r = relay?.trim() ?? "";
-  const relayUrl = r ? (isWsUrl(r) ? r : `wss://${hostOf(r)}/ws/relay`) : undefined;
-  if (isWsUrl(a)) return { rendezvousUrl: a, relayUrl };
+  const relayUrl = r ? (isWsUrl(r) ? r : `wss://${hostOf(r)}/ws/relay`) : "";
+  if (isWsUrl(a)) return { rendezvousUrl: a, relayUrl: relayUrl || relayUrlNextTo(a) };
   const host = hostOf(a);
-  return { rendezvousUrl: `wss://${host}/ws/id`, relayUrl: relayUrl ?? `wss://${host}/ws/relay` };
+  return { rendezvousUrl: `wss://${host}/ws/id`, relayUrl: relayUrl || `wss://${host}/ws/relay` };
 }
 
 export function toServerConfig(s: ServerEntry): ServerConfig {
   const e = endpoints(s.address, s.relay);
-  const relay = e.relayUrl;
-  return { rendezvousUrl: e.rendezvousUrl, relayUrl: relay ? () => relay : undefined, key: s.key.trim() };
+  return { rendezvousUrl: e.rendezvousUrl, relayUrl: () => e.relayUrl, key: s.key.trim() };
 }
 
 /** Null when the key is a valid Ed25519 public key in base64, else the problem. */
@@ -181,14 +188,20 @@ export function decodeConfigString(input: string): RustDeskConfig {
   throw new Error("not a RustDesk server config string");
 }
 
-/** Form values for a decoded config. */
+/**
+ * Form values for a decoded config. Its host and relay are hbbs/hbbr TCP
+ * addresses for native clients; an HTTPS API server is what a browser can
+ * reach, and RD Panel serves /ws/id and /ws/relay there, so it wins.
+ */
 export function entryFromConfig(cfg: RustDeskConfig): Omit<ServerEntry, "id"> {
+  const api = /^https:\/\//i.test(cfg.api) ? hostOf(cfg.api) : "";
+  if (api && !isIpHost(api)) return { name: api, address: api, relay: undefined, key: cfg.key };
   const host = hostOf(cfg.host) || hostOf(cfg.api);
   const relayHost = hostOf(cfg.relay);
   return {
     name: host,
     address: host,
-    relay: relayHost && relayHost !== host ? relayHost : undefined,
+    relay: relayHost && relayHost !== host && !isIpHost(relayHost) ? relayHost : undefined,
     key: cfg.key,
   };
 }
