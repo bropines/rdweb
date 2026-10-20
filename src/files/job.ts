@@ -100,7 +100,12 @@ export function classifyPeerError(text: string): FileErrorCode {
   return "remote";
 }
 
-export function peerError(e: WireFileError, path: string | null, what: string): FileTransferError {
+export function peerError(
+  e: WireFileError,
+  path: string | null,
+  what: string,
+  fileIndex: number | null = e.fileNum >= 0 ? e.fileNum : null,
+): FileTransferError {
   const code = classifyPeerError(e.error);
-  return new FileTransferError(`${what}: ${e.error}`, code, e.id || null, e.fileNum >= 0 ? e.fileNum : null, path, e.error);
+  return new FileTransferError(`${what}: ${e.error}`, code, e.id || null, fileIndex, path, e.error);
 }

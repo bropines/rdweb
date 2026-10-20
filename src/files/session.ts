@@ -93,6 +93,9 @@ export class FileTransferSession {
   private closedInfo: CloseInfo | null = null;
   private problem: SessionError | null = null;
   private home: RemoteDirectory | null = null;
+  /** The remote user's home folder, once a listing of "" told us. */
+  private homePath: string | null = null;
+  private readonly initialDir: string;
   private readonly initial = new Deferred<RemoteDirectory | null>();
   private initialSeen = false;
 
@@ -116,6 +119,7 @@ export class FileTransferSession {
       sendBufferHighWater: opts.sendBufferHighWater ?? DEFAULT_LIMITS.sendBufferHighWater,
     };
     this.showHidden = opts.showHidden ?? false;
+    this.initialDir = opts.initialDir ?? "";
     this.link = new PeerConnector(
       {
         peerId: this.peerId,
@@ -126,7 +130,7 @@ export class FileTransferSession {
         myId: opts.myId,
         clientVersion: opts.clientVersion,
         loginExtras: () => ({
-          union: { case: "fileTransfer", value: { dir: opts.initialDir ?? "", showHidden: this.showHidden } },
+          union: { case: "fileTransfer", value: { dir: this.initialDir, showHidden: this.showHidden } },
         }),
         loginErrorCode: (e) => (/no permission/i.test(e) ? "permission-denied" : "login"),
       },
@@ -575,11 +579,17 @@ export class FileTransferSession {
     const dir = toDirectory(fd);
     if (!this.initialSeen) {
       this.initialSeen = true;
+      if (!this.initialDir) this.homePath = fd.path;
       this.initial.resolve(dir);
       return;
     }
     const p = this.listing;
-    if (p && samePath(p.path, fd.path, this.separator)) p.deferred.resolve(dir);
+    if (!p) return;
+    // "" asks for home: once home is known, accept only that (not a late answer to an older request)
+    if (samePath(p.path || this.homePath || "", fd.path, this.separator)) {
+      if (!p.path) this.homePath = fd.path;
+      p.deferred.resolve(dir);
+    }
     // anything else answers a listing that already timed out
   }
 

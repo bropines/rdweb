@@ -44,6 +44,8 @@ export class IncomingFile implements TransferFileInfo, AsyncIterable<Uint8Array>
   state: FileState;
   /** @internal bytes received from the peer */
   received = 0;
+  /** @internal the consumer started reading */
+  touched = false;
 
   constructor(
     private readonly job: Download,
@@ -64,6 +66,7 @@ export class IncomingFile implements TransferFileInfo, AsyncIterable<Uint8Array>
   }
 
   [Symbol.asyncIterator](): AsyncIterator<Uint8Array> {
+    this.touched = true;
     this.job.accept(this);
     return {
       next: async () => {
@@ -155,7 +158,11 @@ export class Download implements TransferJob, AsyncIterable<IncomingFile> {
     opts.signal?.addEventListener("abort", this.onAbort, { once: true });
   }
 
-  /** Resolves when every file arrived (or was skipped); rejects on error or cancel. */
+  /**
+   * Resolves when every file arrived (or was skipped); rejects on error or
+   * cancel. Files are only requested as they are consumed, so iterate the
+   * job (or use saveTo / downloadBlob): awaiting this alone waits forever.
+   */
   get done(): Promise<TransferResult> {
     return this.result.promise;
   }
@@ -174,7 +181,8 @@ export class Download implements TransferJob, AsyncIterable<IncomingFile> {
     return {
       next: async () => {
         const prev = this.yielded;
-        if (prev && prev.state === "announced") this.skip(prev);
+        // a file the consumer passed over without reading is not wanted
+        if (prev && !prev.touched) this.skip(prev);
         const r = await this.queue.next();
         this.yielded = r.done ? null : r.value;
         return r;
@@ -243,14 +251,14 @@ export class Download implements TransferJob, AsyncIterable<IncomingFile> {
     this.clearTimer();
     const sep = this.host.sep;
     const single = fd.entries.length === 1 && fd.entries[0]!.name === "";
-    const base = baseNameRemote(this.remotePath, sep);
+    const base = localName(baseNameRemote(this.remotePath, sep));
     const infos: TransferFileInfo[] = [];
     try {
       fd.entries.forEach((e, index) => {
         if (single) {
           infos.push({
             index,
-            relativePath: base || "file",
+            relativePath: base,
             remotePath: this.remotePath,
             size: Number(e.size),
             modified: Number(e.modifiedTime) * 1000,
@@ -383,8 +391,12 @@ export class Download implements TransferJob, AsyncIterable<IncomingFile> {
       this.complete();
       return;
     }
-    const path = (e.fileNum >= 0 && this.infos?.[e.fileNum]?.remotePath) || this.remotePath;
-    this.fail(peerError(e, path, `download of ${this.remotePath} failed`));
+    // Peers move past a file before reporting that it could not be read.
+    const index =
+      this.current?.index ??
+      (this.infos && e.fileNum >= 1 && e.fileNum <= this.infos.length ? e.fileNum - 1 : null);
+    const path = (index !== null && this.infos?.[index]?.remotePath) || this.remotePath;
+    this.fail(peerError(e, path, `download of ${this.remotePath} failed`, index));
   }
 
   abort(err: FileTransferError): void {
@@ -414,6 +426,11 @@ export class Download implements TransferJob, AsyncIterable<IncomingFile> {
     }
     if (f.state !== "accepted" && f.state !== "finished") return;
     if (f.state === "accepted") f.state = "discarded";
+    else if (!f.touched) {
+      // arrived completely but passed over unread
+      this.filesDone--;
+      this.skipped++;
+    }
     for (const c of f.chunks.drain()) this.consumed(c.length);
     f.chunks.end();
   }
@@ -448,11 +465,17 @@ export class Download implements TransferJob, AsyncIterable<IncomingFile> {
     const f = this.current;
     this.current = null;
     if (!f) return;
-    if (f.state === "accepted" || f.state === "discarded") {
-      if (f.state === "accepted") f.state = "finished";
+    if (f.state === "accepted") {
+      f.state = "finished";
       f.chunks.end();
       this.filesDone++;
       this.progress(true, f);
+    } else if (f.state === "discarded" || f.state === "announced") {
+      // abandoned by the consumer, or passed over by the peer without our go-ahead
+      f.state = f.state === "announced" ? "skipped" : "discarded";
+      f.chunks.end();
+      this.skipped++;
+      this.progress(true);
     }
     this.open = this.open.filter((x) => x !== f);
   }
@@ -504,6 +527,7 @@ export class Download implements TransferJob, AsyncIterable<IncomingFile> {
       files: this.filesDone,
       skipped: this.skipped,
       bytes: this.bytes,
+      confirmed: true,
     });
     this.host.finished(this);
   }
@@ -561,4 +585,10 @@ export class Download implements TransferJob, AsyncIterable<IncomingFile> {
     };
     this.host.progress(p, this.opts.onProgress);
   }
+}
+
+/** The downloaded item's own name as a local folder/file name ("C:" -> "C", ".." -> "download"). */
+function localName(name: string): string {
+  const clean = name.replace(/[\u0000-\u001f<>:"/\\|?*]/g, "").trim();
+  return clean && clean !== "." && clean !== ".." ? clean : "download";
 }

@@ -118,6 +118,7 @@ describe("FileTransferSession: connect and list", () => {
     const [a, b] = await Promise.all([s.listDir("/home/alice/docs"), s.listDir("")]);
     expect(a.path).toBe("/home/alice/docs");
     expect(b.path).toBe("/home/alice");
+    expect(s.parentPath("/home/alice/docs")).toBe("/home/alice");
     s.close();
     expect(s.state).toBe("closed");
   });
@@ -130,6 +131,16 @@ describe("FileTransferSession: connect and list", () => {
     await expect(s.listDir("/nope")).rejects.toMatchObject({ code: "not-found", path: "/nope" });
     expect(errors[0]).toMatchObject({ code: "not-found", remoteMessage: "No such file or directory (os error 2)" });
     // the session keeps working
+    expect((await s.listDir("")).path).toBe("/home/alice");
+    s.close();
+  });
+
+  it("opens an initial folder and still finds home", async () => {
+    setup();
+    fs.mkdirp("/home/alice/docs");
+    const s = await connected({ initialDir: "/home/alice/docs" });
+    expect(net.loginRequests.at(-1)?.union).toMatchObject({ case: "fileTransfer", value: { dir: "/home/alice/docs" } });
+    expect(s.homeDir).toBe("/home/alice/docs");
     expect((await s.listDir("")).path).toBe("/home/alice");
     s.close();
   });
@@ -285,6 +296,15 @@ describe("FileTransferSession: download", () => {
     for await (const f of dl) got.push(new TextDecoder().decode(await collect(f)));
     expect(got).toEqual(["old", "peer"]);
     expect(fs.confirms).toEqual([]);
+    // a file passed over arrives anyway, but is dropped instead of piling up
+    const dl2 = s.download("/home/alice/docs");
+    const got2: string[] = [];
+    for await (const f of dl2) {
+      if (f.name === "a.txt") continue;
+      got2.push(new TextDecoder().decode(await collect(f)));
+    }
+    expect(got2).toEqual(["peer"]);
+    expect(await dl2.done).toMatchObject({ files: 1, skipped: 1 });
     // uploads go straight to the data as well
     fs.writeFile("/home/alice/docs/c.txt", "overwritten without asking");
     await s.upload([new File(["new c"], "c.txt")], "/home/alice/docs").done;
@@ -323,6 +343,12 @@ describe("FileTransferSession: download", () => {
       expect(new TextDecoder().decode(await collect(f))).toBe("hi");
     }
     expect(await dl.done).toMatchObject({ files: 1, bytes: 2 });
+    // a drive root becomes a usable local folder name
+    for await (const f of s.download("D:\\")) {
+      expect(f.relativePath).toBe("D/sub/a.txt");
+      expect(f.remotePath).toBe("D:\\sub\\a.txt");
+      await collect(f);
+    }
     s.close();
   });
 
@@ -380,6 +406,20 @@ describe("FileTransferSession: download", () => {
     const dl2 = s.download("/root/x");
     await expect(dl2.done).rejects.toMatchObject({ code: "permission-denied", remoteMessage: "Permission denied (os error 13)" });
     expect(errors.map((e) => e.code)).toEqual(["not-found", "permission-denied"]);
+    s.close();
+  });
+
+  it("blames the right file when the peer cannot read one", async () => {
+    setup({ unreadable: ["/home/alice/docs/b.txt"] });
+    fs.writeFile("/home/alice/docs/a.txt", "a");
+    fs.writeFile("/home/alice/docs/b.txt", "b");
+    fs.writeFile("/home/alice/docs/c.txt", "c");
+    const s = await connected();
+    const dl = s.download("/home/alice/docs");
+    const consumer = (async () => {
+      for await (const f of dl) await collect(f);
+    })();
+    await expect(consumer).rejects.toMatchObject({ code: "permission-denied", fileIndex: 1, path: "/home/alice/docs/b.txt" });
     s.close();
   });
 
@@ -461,7 +501,7 @@ describe("FileTransferSession: upload", () => {
     );
     const result = await up.done;
     expect(asked).toEqual(["a.txt:5:false", "c.txt:5:false"]);
-    expect(result).toMatchObject({ direction: "upload", files: 2, skipped: 1, bytes: 9 });
+    expect(result).toMatchObject({ direction: "upload", files: 2, skipped: 1, bytes: 9, confirmed: true });
     expect(fs.text("/home/alice/up/a.txt")).toBe("new a!");
     expect(fs.text("/home/alice/up/sub/b.txt")).toBe("bee");
     expect(fs.text("/home/alice/up/c.txt")).toBe("old c");
@@ -537,6 +577,14 @@ describe("FileTransferSession: upload", () => {
     sock.bufferedAmount = 0;
     await up.done;
     expect(blocks()).toBe(6); // 5 data blocks + end of file
+    s.close();
+  });
+
+  it("reports an upload the peer never acknowledged", async () => {
+    setup({ noEcho: true });
+    const s = await connected({ requestTimeoutMs: 100 });
+    const r = await s.upload([new File(["x"], "x.txt")], "/home/alice").done;
+    expect(r).toMatchObject({ files: 1, confirmed: false });
     s.close();
   });
 

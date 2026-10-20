@@ -157,8 +157,15 @@ export interface TransferResult {
   direction: TransferDirection;
   /** Files transferred completely. */
   files: number;
+  /** Files skipped (by choice, or abandoned by the consumer while arriving). */
   skipped: number;
   bytes: number;
+  /**
+   * The peer acknowledged the end of the job. Always true for downloads; an
+   * upload whose acknowledgement did not arrive in time (slow remote disk, or
+   * a lost peer job) resolves with false.
+   */
+  confirmed: boolean;
 }
 
 export interface DownloadOptions {
@@ -227,7 +234,7 @@ export interface FileTransferEventMap {
   permission: { name: PermissionName; enabled: boolean };
   message: { type: string; title: string; text: string; link: string };
   progress: TransferProgress;
-  /** An upload found an existing remote file; call `answer` once. */
+  /** An upload found an existing remote file; call `answer` once (the upload waits for it, or for cancel()). */
   conflict: { conflict: UploadConflict; answer: (a: ConflictAnswer) => void };
   /** Errors reported by the peer or detected locally, also for jobs whose promise rejects. */
   error: FileErrorEvent;

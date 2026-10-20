@@ -24,6 +24,10 @@ export interface FsBehaviour {
   denied?: string[];
   /** Replace a job's file list names (to send hostile names). */
   rename?: (name: string) => string;
+  /** Files that cannot be opened for reading (reported like a peer does: after moving past them). */
+  unreadable?: string[];
+  /** Do not acknowledge the end of uploads. */
+  noEcho?: boolean;
 }
 
 interface WriteJob {
@@ -245,6 +249,7 @@ export class FakeFs {
           if (!w) return;
           this.finalize(w);
           this.writes.delete(r.value.id);
+          if (this.behaviour.noEcho) return;
           return this.done(peer, r.value.id, r.value.fileNum);
         }
         case "error": {
@@ -321,6 +326,7 @@ export class FakeFs {
       const f = files[i]!;
       await tick();
       if (this.cancelled.has(id)) return;
+      if (this.behaviour.unreadable?.includes(f.path)) return this.error(peer, id, EACCES, i + 1);
       if (!this.behaviour.noDigest) {
         peer.send({
           union: {

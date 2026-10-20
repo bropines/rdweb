@@ -156,7 +156,9 @@ export class Upload implements TransferJob {
         },
       });
       this.progress(true);
-      const digests = this.host.peerVersion >= DIGEST_SINCE;
+      // An unknown version gets the digest dialogue too: never overwrite silently.
+      const v = this.host.peerVersion;
+      const digests = !v || v >= DIGEST_SINCE;
       for (const entry of this.entries) {
         this.check();
         this.current = entry;
@@ -375,13 +377,14 @@ export class Upload implements TransferJob {
     }
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<"timeout">((r) => (timer = setTimeout(() => r("timeout"), this.host.limits.requestTimeoutMs)));
+    let answer: "done" | "skipped" | "timeout";
     try {
-      await this.race(Promise.race([this.echo.promise, timeout]));
+      answer = await this.race(Promise.race([this.echo.promise, timeout]));
     } finally {
       clearTimeout(timer);
     }
-    // A missing confirmation is not an error: everything was sent.
-    this.complete();
+    // Everything was sent; a missing acknowledgement is reported, not failed.
+    this.complete(answer !== "timeout");
   }
 
   private waitReply(fileNum: number): Promise<Reply> {
@@ -438,7 +441,7 @@ export class Upload implements TransferJob {
     this.host.send({ union });
   }
 
-  private complete(): void {
+  private complete(confirmed: boolean): void {
     if (this.over) return;
     this.over = true;
     this.cleanup();
@@ -449,6 +452,7 @@ export class Upload implements TransferJob {
       files: this.filesDone,
       skipped: this.skipped,
       bytes: this.bytes,
+      confirmed,
     });
     this.host.finished(this);
   }
