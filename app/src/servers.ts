@@ -1,0 +1,200 @@
+// Saved servers, RustDesk config strings and WebSocket endpoint derivation.
+import { parseServerKey, type ServerConfig } from "rdweb";
+
+export interface ServerEntry {
+  id: string;
+  name: string;
+  /** Host name ("rd.example.com") or the full hbbs WebSocket URL. */
+  address: string;
+  /** Optional hbbr WebSocket URL or host; derived from the address when empty. */
+  relay?: string;
+  /** hbbs public key (id_ed25519.pub). */
+  key: string;
+}
+
+export interface RecentDevice {
+  serverId: string;
+  id: string;
+  name?: string;
+  at: number;
+}
+
+const SERVERS_KEY = "rdweb.app.servers";
+const RECENT_KEY = "rdweb.app.recent";
+const RECENT_MAX = 10;
+
+function read<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function write(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function loadServers(): ServerEntry[] {
+  const list = read<ServerEntry[]>(SERVERS_KEY);
+  return Array.isArray(list) ? list.filter((s) => s && typeof s.id === "string" && typeof s.address === "string" && typeof s.key === "string") : [];
+}
+
+export function saveServers(list: ServerEntry[]): void {
+  write(SERVERS_KEY, list);
+}
+
+export function loadRecentDevices(): RecentDevice[] {
+  const list = read<RecentDevice[]>(RECENT_KEY);
+  return Array.isArray(list) ? list.filter((r) => r && typeof r.id === "string" && typeof r.serverId === "string").slice(0, RECENT_MAX) : [];
+}
+
+export function pushRecentDevice(serverId: string, id: string, name?: string): RecentDevice[] {
+  const list = loadRecentDevices().filter((r) => !(r.serverId === serverId && r.id === id));
+  list.unshift({ serverId, id, name, at: Date.now() });
+  const out = list.slice(0, RECENT_MAX);
+  write(RECENT_KEY, out);
+  return out;
+}
+
+/** Removes everything the app itself stored (servers, recent devices, UI choices). */
+export function clearAppData(): void {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k?.startsWith("rdweb.app.")) localStorage.removeItem(k);
+    }
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function newServerId(): string {
+  return crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+// RustDesk's own TCP ports (API, NAT test, ID, relay, WebSocket ID/relay):
+// never the TLS reverse proxy that serves /ws/id and /ws/relay.
+const RUSTDESK_PORTS = new Set(["21114", "21115", "21116", "21117", "21118", "21119"]);
+
+/**
+ * "rd.example.com", "https://rd.example.com/", "rd.example.com:21116" →
+ * "rd.example.com" (RustDesk ports dropped, other ports kept).
+ */
+export function hostOf(input: string): string {
+  let s = input.trim();
+  if (!s) return "";
+  let host: string;
+  try {
+    host = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? s : `https://${s}`).host;
+  } catch {
+    s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
+    host = s.split(/[/?#]/)[0] ?? "";
+  }
+  const m = /^(.*):(\d+)$/.exec(host);
+  if (m && RUSTDESK_PORTS.has(m[2]!)) host = m[1]!;
+  return host.toLowerCase();
+}
+
+const isWsUrl = (s: string) => /^wss?:\/\//i.test(s.trim());
+
+export interface Endpoints {
+  rendezvousUrl: string;
+  /** Undefined: the library maps the relay announced by hbbs to wss://<relay host>/ws/relay. */
+  relayUrl?: string;
+}
+
+/** WebSocket endpoints of a server entry: a host name gets /ws/id and /ws/relay over TLS. */
+export function endpoints(address: string, relay?: string): Endpoints {
+  const a = address.trim();
+  const r = relay?.trim() ?? "";
+  const relayUrl = r ? (isWsUrl(r) ? r : `wss://${hostOf(r)}/ws/relay`) : undefined;
+  if (isWsUrl(a)) return { rendezvousUrl: a, relayUrl };
+  const host = hostOf(a);
+  return { rendezvousUrl: `wss://${host}/ws/id`, relayUrl: relayUrl ?? `wss://${host}/ws/relay` };
+}
+
+export function toServerConfig(s: ServerEntry): ServerConfig {
+  const e = endpoints(s.address, s.relay);
+  const relay = e.relayUrl;
+  return { rendezvousUrl: e.rendezvousUrl, relayUrl: relay ? () => relay : undefined, key: s.key.trim() };
+}
+
+/** Null when the key is a valid Ed25519 public key in base64, else the problem. */
+export function keyProblem(key: string): string | null {
+  try {
+    parseServerKey(key.trim());
+    return null;
+  } catch (e) {
+    return (e as Error).message;
+  }
+}
+
+export interface RustDeskConfig {
+  host: string;
+  relay: string;
+  key: string;
+  api: string;
+}
+
+function decodeJson(b64: string): unknown {
+  let s = b64.replace(/-/g, "+").replace(/_/g, "/");
+  s = s.replace(/=+$/, "");
+  s += "=".repeat((4 - (s.length % 4)) % 4);
+  const bin = atob(s);
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+}
+
+/**
+ * Decodes the server config string the RustDesk client ("Export server
+ * config") and RD Panel's Server page produce: URL-safe base64 of
+ * {"host","relay","key","api"}, reversed. Also accepts the plain base64 and
+ * JSON forms and a pasted `rustdesk --config "..."` command line.
+ */
+export function decodeConfigString(input: string): RustDeskConfig {
+  let s = input.trim();
+  const cli = /--config\s+["']?([^"'\s]+)/.exec(s);
+  if (cli) s = cli[1]!;
+  s = s.replace(/^["']|["']$/g, "").replace(/\s+/g, "");
+  if (!s) throw new Error("empty");
+  const attempts: (() => unknown)[] = [() => JSON.parse(s), () => decodeJson([...s].reverse().join("")), () => decodeJson(s)];
+  for (const attempt of attempts) {
+    let v: unknown;
+    try {
+      v = attempt();
+    } catch {
+      continue;
+    }
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const o = v as Record<string, unknown>;
+      const str = (k: string) => (typeof o[k] === "string" ? (o[k] as string).trim() : "");
+      const cfg = { host: str("host"), relay: str("relay"), key: str("key"), api: str("api") };
+      if (cfg.host || cfg.key) return cfg;
+    }
+  }
+  throw new Error("not a RustDesk server config string");
+}
+
+/** Form values for a decoded config. */
+export function entryFromConfig(cfg: RustDeskConfig): Omit<ServerEntry, "id"> {
+  const host = hostOf(cfg.host) || hostOf(cfg.api);
+  const relayHost = hostOf(cfg.relay);
+  return {
+    name: host,
+    address: host,
+    relay: relayHost && relayHost !== host ? relayHost : undefined,
+    key: cfg.key,
+  };
+}
+
+/** For "keyabc…xyz" displays. */
+export function shortKey(key: string): string {
+  const k = key.trim();
+  return k.length > 14 ? `${k.slice(0, 6)}…${k.slice(-6)}` : k;
+}

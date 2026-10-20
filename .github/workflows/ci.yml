@@ -20,7 +20,14 @@ jobs:
         run: npx buf generate && git diff --exit-code -- src/proto
       - run: npm run typecheck
       - run: npm test
-      - run: npm run build
+      - name: Build (core, rdweb/react and its stylesheet)
+        run: npm run build
+      - name: Package exports resolve
+        run: |
+          node -e 'import("rdweb").then(m => { if (!m.Session) process.exit(1) })'
+          test -s dist/react/index.js && test -s dist/react/index.d.ts && test -s dist/react/style.css
+      - name: Build the standalone app
+        run: npm run build:app
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: test

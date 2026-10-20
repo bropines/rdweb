@@ -1,10 +1,12 @@
 {
   "name": "rdweb",
-  "version": "0.2.1",
-  "description": "Browser remote desktop client for RustDesk-compatible servers (hbbs/hbbr over WebSocket, WebCodecs video).",
+  "version": "0.3.0",
+  "description": "Browser remote desktop client for RustDesk-compatible servers (hbbs/hbbr over WebSocket, WebCodecs video), with an optional React UI.",
   "license": "MIT",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "*.css"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bropines/rdweb.git"
@@ -25,28 +27,112 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./react/style.css": "./dist/react/style.css",
     "./package.json": "./package.json"
   },
   "scripts": {
     "gen": "buf generate",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/build-css.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p app/tsconfig.json --noEmit",
     "test": "vitest run",
     "dev": "vite demo --config demo/vite.config.ts",
     "build:demo": "vite build demo --config demo/vite.config.ts",
+    "dev:app": "vite --config app/vite.config.ts",
+    "build:app": "vite build --config app/vite.config.ts",
+    "preview:app": "vite preview --config app/vite.config.ts",
     "prepack": "npm run build"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.16.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "fzstd": "^0.1.1",
     "opus-decoder": "^0.7.12",
+    "tailwind-merge": "^2.6.1",
     "tweetnacl": "^1.0.3"
+  },
+  "peerDependencies": {
+    "@radix-ui/react-checkbox": "^1.1.0",
+    "@radix-ui/react-dialog": "^1.1.0",
+    "@radix-ui/react-dropdown-menu": "^2.1.0",
+    "@radix-ui/react-label": "^2.1.0",
+    "@radix-ui/react-select": "^2.1.0",
+    "@radix-ui/react-separator": "^1.1.0",
+    "@radix-ui/react-slot": "^1.1.0",
+    "@radix-ui/react-switch": "^1.1.0",
+    "lucide-react": ">=0.454.0 <2",
+    "react": "^18.2.0 || ^19.0.0",
+    "react-dom": "^18.2.0 || ^19.0.0",
+    "sonner": "^1.5.0 || ^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@radix-ui/react-checkbox": {
+      "optional": true
+    },
+    "@radix-ui/react-dialog": {
+      "optional": true
+    },
+    "@radix-ui/react-dropdown-menu": {
+      "optional": true
+    },
+    "@radix-ui/react-label": {
+      "optional": true
+    },
+    "@radix-ui/react-select": {
+      "optional": true
+    },
+    "@radix-ui/react-separator": {
+      "optional": true
+    },
+    "@radix-ui/react-slot": {
+      "optional": true
+    },
+    "@radix-ui/react-switch": {
+      "optional": true
+    },
+    "lucide-react": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "sonner": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@bufbuild/buf": "^1.73.0",
     "@bufbuild/protoc-gen-es": "^2.16.0",
+    "@radix-ui/react-checkbox": "^1.4.1",
+    "@radix-ui/react-dialog": "^1.3.1",
+    "@radix-ui/react-dropdown-menu": "^2.2.1",
+    "@radix-ui/react-label": "^2.1.17",
+    "@radix-ui/react-select": "^2.4.1",
+    "@radix-ui/react-separator": "^1.2.0",
+    "@radix-ui/react-slot": "^1.5.0",
+    "@radix-ui/react-switch": "^1.4.1",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^22.20.5",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^5.2.0",
+    "autoprefixer": "^10.6.1",
     "jsdom": "^30.1.3",
+    "lucide-react": "^1.60.0",
+    "postcss": "^8.5.31",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sonner": "^2.0.8",
+    "tailwindcss": "^3.4.19",
+    "tailwindcss-animate": "^1.0.7",
     "typescript": "~5.9.2",
     "vite": "^7.3.7",
     "vitest": "^3.2.7"
