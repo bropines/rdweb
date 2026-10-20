@@ -187,5 +187,7 @@ export interface SessionEventMap {
   privacyMode: { on: boolean; message: string };
   blockInput: { on: boolean; message: string };
   stats: SessionStats;
+  /** Remote audio: "blocked" means the browser waits for a user gesture (Session.resumeAudio). */
+  audio: { state: import("./audio.js").AudioState };
   close: CloseInfo;
 }

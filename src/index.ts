@@ -5,6 +5,7 @@ export type { InputMode, ScaleMode, ViewerOptions, ViewerEventMap } from "./view
 export { probeCodecs, isWebCodecsAvailable, ALL_CODECS } from "./video.js";
 export type { Codec, CodecSupport } from "./video.js";
 export { isAudioDecodingAvailable } from "./audio.js";
+export type { AudioState } from "./audio.js";
 export { encodeBase64, decodeBase64, parseServerKey } from "./crypto.js";
 export { DEFAULT_SETTINGS } from "./types.js";
 export type {

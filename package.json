@@ -51,6 +51,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "fzstd": "^0.1.1",
+    "opus-decoder": "^0.7.12",
     "tailwind-merge": "^2.6.1",
     "tweetnacl": "^1.0.3"
   },

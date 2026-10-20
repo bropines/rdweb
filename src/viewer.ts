@@ -632,6 +632,7 @@ export class Viewer {
   // ----------------------------------------------------------------- touch
 
   private onTouchStart(e: PointerEvent): void {
+    this.session.resumeAudio();
     this.touches.set(e.pointerId, {
       id: e.pointerId,
       x: e.clientX,
@@ -877,6 +878,7 @@ export class Viewer {
   // --------------------------------------------------------------- keyboard
 
   private onKey(e: KeyboardEvent, down: boolean): void {
+    if (down) this.session.resumeAudio();
     if (e.isComposing || e.keyCode === 229) return; // IME is composing; text arrives via input events
     if (!e.code || e.key === "Unidentified") return; // soft keyboards: handled by beforeinput
     // Ctrl/Cmd+V: let the browser fire "paste" so the remote clipboard is
