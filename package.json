@@ -1,0 +1,53 @@
+{
+  "name": "rdweb",
+  "version": "0.1.0",
+  "description": "Browser remote desktop client for RustDesk-compatible servers (hbbs/hbbr over WebSocket, WebCodecs video).",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bropines/rdweb.git"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "gen": "buf generate",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "dev": "vite demo --config demo/vite.config.ts",
+    "build:demo": "vite build demo --config demo/vite.config.ts",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.16.0",
+    "fzstd": "^0.1.1",
+    "tweetnacl": "^1.0.3"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "^1.73.0",
+    "@bufbuild/protoc-gen-es": "^2.16.0",
+    "@types/node": "^22.20.5",
+    "jsdom": "^30.1.3",
+    "typescript": "~5.9.2",
+    "vite": "^7.3.7",
+    "vitest": "^3.2.7"
+  }
+}

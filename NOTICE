@@ -1,0 +1,15 @@
+rdweb
+Copyright (c) 2026 bropines and contributors
+Licensed under the MIT License (see LICENSE).
+
+RustDesk is a trademark of its respective owners (Purslane Ltd.). rdweb is an
+independent browser client that speaks the RustDesk network protocol so it can
+connect to RustDesk peers through RustDesk-compatible servers; it is not
+affiliated with or endorsed by RustDesk / Purslane Ltd.
+
+proto/*.proto are written for this project. They declare only the messages
+rdweb uses, with field numbers and types matching the protocol for
+interoperability. No RustDesk source code is included.
+
+Third-party npm packages are distributed under their own licenses; see
+package.json and their LICENSE files.

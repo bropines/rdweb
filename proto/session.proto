@@ -1,0 +1,571 @@
+// Wire schema for the peer-to-peer session messages (the stream that runs
+// through hbbr once both sides joined the relay). Field numbers and types
+// follow the RustDesk network protocol so the messages are byte-compatible
+// with RustDesk peers; only the subset rdweb uses is declared. Unknown fields
+// and oneof members are skipped on decode.
+syntax = "proto3";
+package rdweb.session;
+
+// ---------------------------------------------------------------- handshake
+
+// Signed (crypto_sign combined form) by the peer's long-term Ed25519 key.
+message IdPk {
+  string id = 1;
+  bytes pk = 2;
+}
+
+message SignedId { bytes id = 1; }
+
+message PublicKey {
+  bytes asymmetric_value = 1;
+  bytes symmetric_value = 2;
+  uint32 kx_version = 3;
+}
+
+message Hash {
+  string salt = 1;
+  string challenge = 2;
+}
+
+// -------------------------------------------------------------------- login
+
+message OSLogin {
+  string username = 1;
+  string password = 2;
+}
+
+message LoginRequest {
+  string username = 1;
+  bytes password = 2;
+  string my_id = 4;
+  string my_name = 5;
+  OptionMessage option = 6;
+  bool video_ack_required = 9;
+  uint64 session_id = 10;
+  string version = 11;
+  OSLogin os_login = 12;
+  string my_platform = 13;
+  bytes hwid = 14;
+  string avatar = 17;
+}
+
+message Auth2FA {
+  string code = 1;
+  bytes hwid = 2;
+}
+
+message Features {
+  bool privacy_mode = 1;
+  bool terminal = 2;
+}
+
+message CodecAbility {
+  bool vp8 = 1;
+  bool vp9 = 2;
+  bool av1 = 3;
+  bool h264 = 4;
+  bool h265 = 5;
+}
+
+message SupportedEncoding {
+  bool h264 = 1;
+  bool h265 = 2;
+  bool vp8 = 3;
+  bool av1 = 4;
+  CodecAbility i444 = 5;
+}
+
+message Resolution {
+  int32 width = 1;
+  int32 height = 2;
+}
+
+message SupportedResolutions { repeated Resolution resolutions = 1; }
+
+message DisplayInfo {
+  sint32 x = 1;
+  sint32 y = 2;
+  int32 width = 3;
+  int32 height = 4;
+  string name = 5;
+  bool online = 6;
+  bool cursor_embedded = 7;
+  Resolution original_resolution = 8;
+  double scale = 9;
+}
+
+message WindowsSession {
+  uint32 sid = 1;
+  string name = 2;
+}
+
+message WindowsSessions {
+  repeated WindowsSession sessions = 1;
+  uint32 current_sid = 2;
+}
+
+message PeerInfo {
+  string username = 1;
+  string hostname = 2;
+  string platform = 3;
+  repeated DisplayInfo displays = 4;
+  int32 current_display = 5;
+  bool sas_enabled = 6;
+  string version = 7;
+  Features features = 9;
+  SupportedEncoding encoding = 10;
+  SupportedResolutions resolutions = 11;
+  // JSON object with platform specific extras (e.g. "supported_privacy_mode_impl").
+  string platform_additions = 12;
+  WindowsSessions windows_sessions = 13;
+}
+
+message LoginResponse {
+  oneof union {
+    string error = 1;
+    PeerInfo peer_info = 2;
+  }
+  bool enable_trusted_devices = 3;
+}
+
+// ------------------------------------------------------------------- video
+
+message EncodedVideoFrame {
+  bytes data = 1;
+  bool key = 2;
+  int64 pts = 3;
+}
+
+message EncodedVideoFrames { repeated EncodedVideoFrame frames = 1; }
+
+message RGB { bool compress = 1; }
+
+message YUV {
+  bool compress = 1;
+  int32 stride = 2;
+}
+
+enum Chroma {
+  I420 = 0;
+  I444 = 1;
+}
+
+message VideoFrame {
+  oneof union {
+    EncodedVideoFrames vp9s = 6;
+    RGB rgb = 7;
+    YUV yuv = 8;
+    EncodedVideoFrames h264s = 10;
+    EncodedVideoFrames h265s = 11;
+    EncodedVideoFrames vp8s = 12;
+    EncodedVideoFrames av1s = 13;
+  }
+  int64 timestamp = 9;
+  int32 display = 14;
+}
+
+// ------------------------------------------------------------------- input
+
+message MouseEvent {
+  // (buttons << 3) | type
+  int32 mask = 1;
+  sint32 x = 2;
+  sint32 y = 3;
+  repeated ControlKey modifiers = 4;
+}
+
+message TouchScaleUpdate { int32 scale = 1; }
+message TouchPanStart { int32 x = 1; int32 y = 2; }
+message TouchPanUpdate { int32 x = 1; int32 y = 2; }
+message TouchPanEnd { int32 x = 1; int32 y = 2; }
+
+message TouchEvent {
+  oneof union {
+    TouchScaleUpdate scale_update = 1;
+    TouchPanStart pan_start = 2;
+    TouchPanUpdate pan_update = 3;
+    TouchPanEnd pan_end = 4;
+  }
+}
+
+message PointerDeviceEvent {
+  oneof union {
+    TouchEvent touch_event = 1;
+  }
+  repeated ControlKey modifiers = 2;
+}
+
+enum KeyboardMode {
+  Legacy = 0;
+  Map = 1;
+  Translate = 2;
+  Auto = 3;
+}
+
+enum ControlKey {
+  Unknown = 0;
+  Alt = 1;
+  Backspace = 2;
+  CapsLock = 3;
+  Control = 4;
+  Delete = 5;
+  DownArrow = 6;
+  End = 7;
+  Escape = 8;
+  F1 = 9;
+  F10 = 10;
+  F11 = 11;
+  F12 = 12;
+  F2 = 13;
+  F3 = 14;
+  F4 = 15;
+  F5 = 16;
+  F6 = 17;
+  F7 = 18;
+  F8 = 19;
+  F9 = 20;
+  Home = 21;
+  LeftArrow = 22;
+  Meta = 23;
+  Option = 24;
+  PageDown = 25;
+  PageUp = 26;
+  Return = 27;
+  RightArrow = 28;
+  Shift = 29;
+  Space = 30;
+  Tab = 31;
+  UpArrow = 32;
+  Numpad0 = 33;
+  Numpad1 = 34;
+  Numpad2 = 35;
+  Numpad3 = 36;
+  Numpad4 = 37;
+  Numpad5 = 38;
+  Numpad6 = 39;
+  Numpad7 = 40;
+  Numpad8 = 41;
+  Numpad9 = 42;
+  Cancel = 43;
+  Clear = 44;
+  Menu = 45;
+  Pause = 46;
+  Kana = 47;
+  Hangul = 48;
+  Junja = 49;
+  Final = 50;
+  Hanja = 51;
+  Kanji = 52;
+  Convert = 53;
+  Select = 54;
+  Print = 55;
+  Execute = 56;
+  Snapshot = 57;
+  Insert = 58;
+  Help = 59;
+  Sleep = 60;
+  Separator = 61;
+  Scroll = 62;
+  NumLock = 63;
+  RWin = 64;
+  Apps = 65;
+  Multiply = 66;
+  Add = 67;
+  Subtract = 68;
+  Decimal = 69;
+  Divide = 70;
+  Equals = 71;
+  NumpadEnter = 72;
+  RShift = 73;
+  RControl = 74;
+  RAlt = 75;
+  VolumeMute = 76;
+  VolumeUp = 77;
+  VolumeDown = 78;
+  Power = 79;
+  CtrlAltDel = 100;
+  LockScreen = 101;
+}
+
+message KeyEvent {
+  bool down = 1;
+  bool press = 2;
+  oneof union {
+    ControlKey control_key = 3;
+    // Legacy: a character code. Map: the key's platform code on the peer.
+    uint32 chr = 4;
+    uint32 unicode = 5;
+    string seq = 6;
+    uint32 win2win_hotkey = 7;
+  }
+  repeated ControlKey modifiers = 8;
+  KeyboardMode mode = 9;
+}
+
+// ------------------------------------------------------------------ cursor
+
+message CursorData {
+  uint64 id = 1 [jstype = JS_STRING];
+  sint32 hotx = 2;
+  sint32 hoty = 3;
+  int32 width = 4;
+  int32 height = 5;
+  // zstd compressed RGBA, width * height * 4 bytes once inflated.
+  bytes colors = 6;
+}
+
+message CursorPosition {
+  sint32 x = 1;
+  sint32 y = 2;
+}
+
+// --------------------------------------------------------------- clipboard
+
+enum ClipboardFormat {
+  Text = 0;
+  Rtf = 1;
+  Html = 2;
+  ImageRgba = 21;
+  ImagePng = 22;
+  ImageSvg = 23;
+  Special = 31;
+}
+
+message Clipboard {
+  bool compress = 1;
+  bytes content = 2;
+  int32 width = 3;
+  int32 height = 4;
+  ClipboardFormat format = 5;
+  string special_name = 6;
+}
+
+message MultiClipboards { repeated Clipboard clipboards = 1; }
+
+// ----------------------------------------------------------------- display
+
+message SwitchDisplay {
+  int32 display = 1;
+  sint32 x = 2;
+  sint32 y = 3;
+  int32 width = 4;
+  int32 height = 5;
+  bool cursor_embedded = 6;
+  SupportedResolutions resolutions = 7;
+  Resolution original_resolution = 8;
+}
+
+message CaptureDisplays {
+  repeated int32 add = 1;
+  repeated int32 sub = 2;
+  repeated int32 set = 3;
+}
+
+message DisplayResolution {
+  int32 display = 1;
+  Resolution resolution = 2;
+}
+
+message ToggleVirtualDisplay {
+  int32 display = 1;
+  bool on = 2;
+}
+
+message TogglePrivacyMode {
+  string impl_key = 1;
+  bool on = 2;
+}
+
+// ----------------------------------------------------------------- options
+
+message PermissionInfo {
+  enum Permission {
+    Keyboard = 0;
+    Clipboard = 2;
+    Audio = 3;
+    File = 4;
+    Restart = 5;
+    Recording = 6;
+    BlockInput = 7;
+    PrivacyMode = 8;
+  }
+  Permission permission = 1;
+  bool enabled = 2;
+}
+
+enum ImageQuality {
+  NotSet = 0;
+  Low = 2;
+  Balanced = 3;
+  Best = 4;
+}
+
+message SupportedDecoding {
+  enum PreferCodec {
+    Auto = 0;
+    VP9 = 1;
+    H264 = 2;
+    H265 = 3;
+    VP8 = 4;
+    AV1 = 5;
+  }
+  int32 ability_vp9 = 1;
+  int32 ability_h264 = 2;
+  int32 ability_h265 = 3;
+  PreferCodec prefer = 4;
+  int32 ability_vp8 = 5;
+  int32 ability_av1 = 6;
+  CodecAbility i444 = 7;
+  Chroma prefer_chroma = 8;
+}
+
+message OptionMessage {
+  enum BoolOption {
+    NotSet = 0;
+    No = 1;
+    Yes = 2;
+  }
+  ImageQuality image_quality = 1;
+  BoolOption lock_after_session_end = 2;
+  BoolOption show_remote_cursor = 3;
+  BoolOption privacy_mode = 4;
+  BoolOption block_input = 5;
+  // Quality percent shifted left by 8 bits.
+  int32 custom_image_quality = 6;
+  BoolOption disable_audio = 7;
+  BoolOption disable_clipboard = 8;
+  BoolOption enable_file_transfer = 9;
+  SupportedDecoding supported_decoding = 10;
+  int32 custom_fps = 11;
+  BoolOption disable_keyboard = 12;
+  BoolOption follow_remote_cursor = 15;
+  BoolOption follow_remote_window = 16;
+  BoolOption show_my_cursor = 19;
+}
+
+message TestDelay {
+  int64 time = 1;
+  bool from_client = 2;
+  uint32 last_delay = 3;
+  uint32 target_bitrate = 4;
+}
+
+// ------------------------------------------------------------------- audio
+
+message AudioFormat {
+  uint32 sample_rate = 1;
+  uint32 channels = 2;
+}
+
+message AudioFrame { bytes data = 1; }
+
+// ------------------------------------------------------------- notifications
+
+message ChatMessage { string text = 1; }
+
+message MessageBox {
+  string msgtype = 1;
+  string title = 2;
+  string text = 3;
+  string link = 4;
+}
+
+message BackNotification {
+  enum BlockInputState {
+    BlkStateUnknown = 0;
+    BlkOnSucceeded = 2;
+    BlkOnFailed = 3;
+    BlkOffSucceeded = 4;
+    BlkOffFailed = 5;
+  }
+  enum PrivacyModeState {
+    PrvStateUnknown = 0;
+    PrvOnByOther = 2;
+    PrvNotSupported = 3;
+    PrvOnSucceeded = 4;
+    PrvOnFailedDenied = 5;
+    PrvOnFailedPlugin = 6;
+    PrvOnFailed = 7;
+    PrvOffSucceeded = 8;
+    PrvOffByPeer = 9;
+    PrvOffFailed = 10;
+    PrvOffUnknown = 11;
+  }
+  oneof union {
+    PrivacyModeState privacy_mode_state = 1;
+    BlockInputState block_input_state = 2;
+  }
+  string details = 3;
+  string impl_key = 4;
+}
+
+message ElevationRequestWithLogon {
+  string username = 1;
+  string password = 2;
+}
+
+message ElevationRequest {
+  oneof union {
+    bool direct = 1;
+    ElevationRequestWithLogon logon = 2;
+  }
+}
+
+message Misc {
+  oneof union {
+    ChatMessage chat_message = 4;
+    SwitchDisplay switch_display = 5;
+    PermissionInfo permission_info = 6;
+    OptionMessage option = 7;
+    AudioFormat audio_format = 8;
+    string close_reason = 9;
+    bool refresh_video = 10;
+    bool video_received = 12;
+    BackNotification back_notification = 13;
+    bool restart_remote_device = 14;
+    bool uac = 15;
+    bool foreground_window_elevated = 16;
+    bool stop_service = 17;
+    ElevationRequest elevation_request = 18;
+    string elevation_response = 19;
+    bool portable_service_running = 20;
+    Resolution change_resolution = 24;
+    uint32 auto_adjust_fps = 28;
+    bool client_record_status = 29;
+    CaptureDisplays capture_displays = 30;
+    int32 refresh_video_display = 31;
+    ToggleVirtualDisplay toggle_virtual_display = 32;
+    TogglePrivacyMode toggle_privacy_mode = 33;
+    SupportedEncoding supported_encoding = 34;
+    uint32 selected_sid = 35;
+    DisplayResolution change_display_resolution = 36;
+    int32 follow_current_display = 38;
+  }
+}
+
+// ------------------------------------------------------------------ envelope
+
+message Message {
+  oneof union {
+    SignedId signed_id = 3;
+    PublicKey public_key = 4;
+    TestDelay test_delay = 5;
+    VideoFrame video_frame = 6;
+    LoginRequest login_request = 7;
+    LoginResponse login_response = 8;
+    Hash hash = 9;
+    MouseEvent mouse_event = 10;
+    AudioFrame audio_frame = 11;
+    CursorData cursor_data = 12;
+    CursorPosition cursor_position = 13;
+    uint64 cursor_id = 14 [jstype = JS_STRING];
+    KeyEvent key_event = 15;
+    Clipboard clipboard = 16;
+    Misc misc = 19;
+    MessageBox message_box = 21;
+    PeerInfo peer_info = 25;
+    PointerDeviceEvent pointer_device_event = 26;
+    Auth2FA auth_2fa = 27;
+    MultiClipboards multi_clipboards = 28;
+  }
+}

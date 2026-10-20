@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>rdweb demo</title>
+    <style>
+      :root { color-scheme: light dark; --bg: #f6f6f7; --fg: #111; --muted: #666; --card: #fff; --border: #ddd; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #111214; --fg: #eee; --muted: #999; --card: #1b1c1f; --border: #333; } }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+      #app { display: flex; flex-direction: column; height: 100dvh; }
+      form { display: grid; gap: 8px; max-width: 520px; margin: 24px auto; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; width: calc(100% - 32px); }
+      label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+      input, select, button { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--fg); min-width: 0; }
+      button { cursor: pointer; }
+      #bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; border-bottom: 1px solid var(--border); background: var(--card); align-items: center; }
+      #bar select, #bar button { padding: 4px 6px; font-size: 12px; }
+      #view { flex: 1; min-height: 0; }
+      #status { font-size: 12px; color: var(--muted); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+      .hidden { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <form id="connect">
+        <strong>rdweb demo</strong>
+        <label>ID server (WebSocket)<input name="idUrl" required placeholder="wss://example.com/ws/id" /></label>
+        <label>Relay (WebSocket, optional)<input name="relayUrl" placeholder="wss://example.com/ws/relay" /></label>
+        <label>Server key<input name="key" required /></label>
+        <label>Remote ID<input name="peer" required inputmode="numeric" /></label>
+        <button type="submit">Connect</button>
+      </form>
+      <div id="bar" class="hidden"></div>
+      <div id="view" class="hidden"></div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
