@@ -139,6 +139,7 @@ export async function joinRelay(
   peerId: string,
   licenceKey: string,
   signal?: AbortSignal,
+  connType: ConnType = ConnType.DEFAULT_CONN,
 ): Promise<WsTransport> {
   let t: WsTransport;
   try {
@@ -149,7 +150,7 @@ export async function joinRelay(
   const req = create(RendezvousMessageSchema, {
     union: {
       case: "requestRelay",
-      value: { id: peerId, uuid, licenceKey, secure: true, connType: ConnType.DEFAULT_CONN },
+      value: { id: peerId, uuid, licenceKey, secure: true, connType },
     },
   });
   t.send(toBinary(RendezvousMessageSchema, req));

@@ -1,7 +1,8 @@
-// A remote desktop session with one peer: rendezvous, relay, authenticated
-// key exchange, login, then the media/input message loop.
+// A remote desktop session with one peer: the shared connector handles
+// rendezvous, relay, the authenticated key exchange and login; this class runs
+// the media/input message loop.
 
-import { create, fromBinary, toBinary, type MessageInitShape } from "@bufbuild/protobuf";
+import type { MessageInitShape } from "@bufbuild/protobuf";
 import {
   BackNotification_BlockInputState as BlockState,
   BackNotification_PrivacyModeState as PrivacyState,
@@ -10,13 +11,13 @@ import {
   ControlKey,
   ImageQuality,
   KeyboardMode,
-  MessageSchema,
   OptionMessage_BoolOption as BoolOption,
   PermissionInfo_Permission as Permission,
   SupportedDecoding_PreferCodec as PreferCodec,
   type Clipboard,
   type KeyEventSchema,
   type Message,
+  type MessageSchema,
   type OptionMessage,
   type OptionMessageSchema,
   type PeerInfo,
@@ -25,21 +26,12 @@ import {
   type VideoFrame as WireVideoFrame,
 } from "./proto/session_pb.js";
 import { AudioPlayer } from "./audio.js";
-import {
-  HandshakeError,
-  StreamCipher,
-  createKeyExchange,
-  loginProof,
-  parseServerKey,
-  rememberedPasswordHash,
-  verifyPeerEphemeralKey,
-  verifyPeerLongTermKey,
-} from "./crypto.js";
+import { isRetryable, PeerConnector, SessionError, toSessionError, versionNumber } from "./connector.js";
+import { parseServerKey } from "./crypto.js";
 import { CursorStore, type CursorShape } from "./cursor.js";
 import { Emitter } from "./emitter.js";
 import { isModifierCode, KEYMAP, mapCode, peerOsFromPlatform } from "./keymap.js";
-import { joinRelay, RendezvousError, requestRelay } from "./rendezvous.js";
-import { TransportError, WsTransport } from "./transport.js";
+import { ConnType } from "./proto/rendezvous_pb.js";
 import {
   DEFAULT_SETTINGS,
   type DisplayRect,
@@ -57,24 +49,12 @@ import { inflateCapped } from "./zstd.js";
 
 type OptInit = Exclude<MessageInitShape<typeof OptionMessageSchema>, OptionMessage>;
 
-/** Announced to peers; they enable features by version. */
-export const CLIENT_VERSION = "1.4.3";
-const WEB_ID_PREFIX = "web";
+export { CLIENT_VERSION, SessionError } from "./connector.js";
 const MAX_CLIPBOARD = 4 << 20;
 
 export const MOUSE_TYPE = { move: 0, down: 1, up: 2, wheel: 3, trackpad: 4 } as const;
 export const MOUSE_BUTTON = { left: 1, right: 2, middle: 4, back: 8, forward: 16 } as const;
 export type MouseButtonName = keyof typeof MOUSE_BUTTON;
-
-export class SessionError extends Error {
-  constructor(
-    message: string,
-    readonly code: string,
-  ) {
-    super(message);
-    this.name = "SessionError";
-  }
-}
 
 export interface KeyInput {
   /** KeyboardEvent.code */
@@ -95,55 +75,13 @@ interface Modifiers {
   meta: boolean;
 }
 
-function versionNumber(v: string): number {
-  // "1.2.4" -> 1002004; tolerant of suffixes like "1.4.0-1"
-  const parts = v.split(/[.-]/).map((p) => parseInt(p, 10) || 0);
-  return (parts[0] ?? 0) * 1_000_000 + (parts[1] ?? 0) * 1_000 + (parts[2] ?? 0);
-}
-
-function randomSessionId(): bigint {
-  const b = crypto.getRandomValues(new Uint8Array(8));
-  let v = 0n;
-  for (const x of b) v = (v << 8n) | BigInt(x);
-  return v & 0x7fff_ffff_ffff_ffffn;
-}
-
-function defaultRelayUrl(relayServer: string): string {
-  const secure = typeof location === "undefined" || location.protocol === "https:";
-  let host = relayServer;
-  let port = "";
-  const v6 = /^\[(.+)\](?::(\d+))?$/.exec(relayServer);
-  if (v6) {
-    host = v6[1]!;
-    port = v6[2] ?? "";
-  } else if (relayServer.split(":").length === 2) {
-    [host, port] = relayServer.split(":") as [string, string];
-  }
-  const isIp = /^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(":");
-  if (isIp) {
-    const p = port ? Number(port) + 2 : 21119;
-    const h = host.includes(":") ? `[${host}]` : host;
-    return `${secure ? "wss" : "ws"}://${h}:${p}`;
-  }
-  return `wss://${host}/ws/relay`;
-}
-
 export class Session {
   readonly peerId: string;
   private settingsValue: SessionSettings;
   private readonly events = new Emitter<SessionEventMap>();
   private stateValue: SessionState = "idle";
   private abort = new AbortController();
-
-  private relay: WsTransport | null = null;
-  private cipher: StreamCipher | null = null;
-  private salt = "";
-  private challenge = "";
-  private hash: Uint8Array | null = null;
-  private triedRemembered = false;
-  private loginResolve: (() => void) | null = null;
-  private loginReject: ((e: Error) => void) | null = null;
-  private sessionId = randomSessionId();
+  private readonly link: PeerConnector;
 
   private codecSupport: CodecSupport = { decode: new Set(), decode444: new Set() };
   private video: VideoPipeline | null = null;
@@ -177,12 +115,33 @@ export class Session {
   private scrollRest = { x: 0, y: 0 };
   private closedInfo: SessionEventMap["close"] | null = null;
 
-  constructor(private readonly opts: SessionOptions) {
+  constructor(opts: SessionOptions) {
     this.peerId = opts.peerId.replace(/\s+/g, "");
     if (!this.peerId) throw new SessionError("peer id is empty", "bad-config");
     this.settingsValue = { ...DEFAULT_SETTINGS, ...opts.settings };
     // fail early on a missing/bad key: we never connect unauthenticated
     parseServerKey(opts.server.key);
+    this.link = new PeerConnector(
+      {
+        peerId: this.peerId,
+        server: opts.server,
+        connType: ConnType.DEFAULT_CONN,
+        rememberedHash: opts.rememberedHash,
+        myName: opts.myName,
+        myId: opts.myId,
+        clientVersion: opts.clientVersion,
+        loginExtras: () => ({ videoAckRequired: true, option: this.loginOptions(this.settingsValue) }),
+      },
+      {
+        state: (state) => this.setState(state),
+        password: (wrong) => this.events.emit("password", { wrong }),
+        twoFactor: (wrong) => this.events.emit("twoFactor", { wrong }),
+        waitingForApproval: () => this.events.emit("waitingForApproval", {}),
+        loggedIn: (pi) => this.onLoggedIn(pi),
+        message: (msg) => this.onMessage(msg),
+        failed: (info) => this.shutdown(info),
+      },
+    );
   }
 
   // ------------------------------------------------------------------ public
@@ -231,81 +190,29 @@ export class Session {
    */
   async connect(): Promise<void> {
     if (this.stateValue !== "idle") throw new SessionError("connect() can only be called once", "state");
-    const { server } = this.opts;
-    const serverKey = parseServerKey(server.key);
-    const signal = this.abort.signal;
     try {
       this.codecSupport = await probeCodecs();
-
-      this.setState("rendezvous");
-      const ticket = await requestRelay({
-        url: server.rendezvousUrl,
-        peerId: this.peerId,
-        licenceKey: server.key.trim(),
-        token: server.token,
-        version: this.opts.clientVersion ?? CLIENT_VERSION,
-        signal,
-      });
-      if (ticket.signedPeerKey.length === 0) {
-        throw new SessionError(
-          "the server did not vouch for the remote device's key; refusing an unauthenticated connection",
-          "unverified-peer",
-        );
-      }
-      const peerLongTerm = verifyPeerLongTermKey(ticket.signedPeerKey, serverKey, this.peerId);
-
-      this.setState("relay");
-      const relayUrl = (server.relayUrl ?? defaultRelayUrl)(ticket.relayServer);
-      const relay = await joinRelay(relayUrl, ticket.uuid, this.peerId, server.key.trim(), signal);
-      this.relay = relay;
-
-      this.setState("handshake");
-      const first = await this.nextPlain(relay, 30_000, signal);
-      if (first.union.case !== "signedId") {
-        throw new HandshakeError("the remote device did not identify itself");
-      }
-      const boxKey = verifyPeerEphemeralKey(first.union.value.id, peerLongTerm, this.peerId);
-      const kx = createKeyExchange(boxKey);
-      relay.send(
-        toBinary(
-          MessageSchema,
-          create(MessageSchema, {
-            union: { case: "publicKey", value: { asymmetricValue: kx.ourPublicKey, symmetricValue: kx.sealedKey } },
-          }),
-        ),
-      );
-      this.cipher = new StreamCipher(kx.key);
-
-      this.setState("login");
-      const loggedIn = new Promise<void>((resolve, reject) => {
-        this.loginResolve = resolve;
-        this.loginReject = reject;
-      });
-      relay.onClose((reason) => this.onTransportClosed(reason));
-      relay.onMessage((raw) => this.onRaw(raw));
-      await loggedIn;
+      await this.link.connect(this.abort.signal);
     } catch (e) {
-      const err = this.toSessionError(e);
+      const err = toSessionError(e);
       this.shutdown({ reason: err.message, remote: false, retryable: isRetryable(err) });
       throw err;
     }
   }
 
   /** Answers a `password` event. */
-  async login(password: string): Promise<void> {
-    if (!this.salt) throw new SessionError("not waiting for a password", "state");
-    this.hash = await rememberedPasswordHash(password, this.salt);
-    await this.sendLogin(this.hash);
+  login(password: string): Promise<void> {
+    return this.link.login(password);
   }
 
   /** Answers a `twoFactor` event. */
   submitTwoFactor(code: string): void {
-    this.send({ union: { case: "auth2fa", value: { code: code.trim() } } });
+    this.link.submitTwoFactor(code);
   }
 
   close(reason = "closed by user"): void {
     if (this.stateValue === "closed") return;
-    if (this.cipher && this.relay?.isOpen) {
+    if (this.link.isOpen) {
       try {
         this.send({ union: { case: "misc", value: { union: { case: "closeReason", value: reason } } } });
       } catch {
@@ -563,39 +470,8 @@ export class Session {
     return this.permissions.keyboard;
   }
 
-  private toSessionError(e: unknown): SessionError {
-    if (e instanceof SessionError) return e;
-    if (e instanceof RendezvousError) return new SessionError(e.message, e.code);
-    if (e instanceof HandshakeError) return new SessionError(`secure handshake failed: ${e.message}`, "handshake");
-    if (e instanceof TransportError) return new SessionError(e.message, e.code === "aborted" ? "aborted" : "network");
-    return new SessionError(e instanceof Error ? e.message : String(e), "internal");
-  }
-
-  private async nextPlain(t: WsTransport, timeoutMs: number, signal: AbortSignal): Promise<Message> {
-    for (;;) {
-      const raw = await t.next(timeoutMs, signal);
-      if (raw.length === 0) continue;
-      try {
-        return fromBinary(MessageSchema, raw);
-      } catch {
-        throw new HandshakeError("the remote device sent a malformed message");
-      }
-    }
-  }
-
   private send(init: MessageInitShape<typeof MessageSchema>): void {
-    const relay = this.relay;
-    const cipher = this.cipher;
-    if (!relay || !cipher || !relay.isOpen) return;
-    const bytes = toBinary(MessageSchema, create(MessageSchema, init));
-    relay.send(cipher.seal(bytes));
-  }
-
-  private onTransportClosed(reason: string): void {
-    if (this.stateValue === "closed") return;
-    const err = new SessionError(`connection lost: ${reason}`, "network");
-    this.loginReject?.(err);
-    this.shutdown({ reason: err.message, remote: true, retryable: true });
+    this.link.send(init);
   }
 
   private shutdown(info: SessionEventMap["close"]): void {
@@ -604,18 +480,11 @@ export class Session {
     this.abort.abort();
     if (this.statsTimer) clearInterval(this.statsTimer);
     this.statsTimer = null;
-    this.relay?.close(info.reason);
-    this.relay = null;
-    this.cipher?.destroy();
-    this.cipher = null;
+    this.link.close(info.reason);
     this.video?.close();
     this.video = null;
     this.audio.close();
     this.cursors.clear();
-    this.hash?.fill(0);
-    const reject = this.loginReject;
-    this.loginResolve = this.loginReject = null;
-    reject?.(new SessionError(info.reason, "closed"));
     this.setState("closed");
     this.events.emit("close", info);
   }
@@ -625,39 +494,9 @@ export class Session {
     return this.closedInfo;
   }
 
-  private onRaw(raw: Uint8Array): void {
-    if (!this.cipher) return;
-    let msg: Message;
-    try {
-      msg = fromBinary(MessageSchema, this.cipher.open(raw));
-    } catch (e) {
-      const err = this.toSessionError(e);
-      this.loginReject?.(err);
-      this.shutdown({ reason: err.message, remote: false, retryable: true });
-      return;
-    }
-    try {
-      this.onMessage(msg);
-    } catch (e) {
-      // A bad message must not kill the session; surface it for debugging.
-      console.warn("rdweb: failed to handle message", msg.union.case, e);
-    }
-  }
-
   private onMessage(msg: Message): void {
     const u = msg.union;
     switch (u.case) {
-      case "hash":
-        this.salt = u.value.salt;
-        this.challenge = u.value.challenge;
-        void this.onHash();
-        return;
-      case "loginResponse": {
-        const r = u.value.union;
-        if (r.case === "error") this.onLoginError(r.value);
-        else if (r.case === "peerInfo") this.onLoggedIn(r.value);
-        return;
-      }
       case "testDelay":
         if (!u.value.fromClient) {
           this.lastDelay = u.value.lastDelay;
@@ -713,67 +552,6 @@ export class Session {
     }
   }
 
-  private async onHash(): Promise<void> {
-    if (this.opts.rememberedHash?.length && !this.triedRemembered) {
-      this.triedRemembered = true;
-      this.hash = new Uint8Array(this.opts.rememberedHash);
-      await this.sendLogin(this.hash);
-      return;
-    }
-    // No password yet: an empty login asks the remote user to accept us,
-    // and we ask our user for the password at the same time.
-    await this.sendLogin(null);
-    this.events.emit("password", { wrong: false });
-  }
-
-  private async sendLogin(saltedHash: Uint8Array | null): Promise<void> {
-    const proof = saltedHash ? await loginProof(saltedHash, this.challenge) : new Uint8Array(0);
-    const s = this.settingsValue;
-    this.send({
-      union: {
-        case: "loginRequest",
-        value: {
-          username: this.peerId,
-          password: proof,
-          myId: this.opts.myId ?? WEB_ID_PREFIX,
-          myName: this.opts.myName ?? "Web client",
-          myPlatform: "Web",
-          version: this.opts.clientVersion ?? CLIENT_VERSION,
-          sessionId: this.sessionId,
-          videoAckRequired: true,
-          option: this.loginOptions(s),
-        },
-      },
-    });
-  }
-
-  private onLoginError(err: string): void {
-    if ((globalThis as { RDWEB_DEBUG?: boolean }).RDWEB_DEBUG) console.debug("rdweb: login error", JSON.stringify(err));
-    switch (err) {
-      case "Empty Password":
-        this.events.emit("password", { wrong: false });
-        return;
-      case "Wrong Password":
-        this.hash = null;
-        this.events.emit("password", { wrong: true });
-        return;
-      case "2FA Required":
-        this.events.emit("twoFactor", { wrong: false });
-        return;
-      case "Wrong 2FA Code":
-        this.events.emit("twoFactor", { wrong: true });
-        return;
-      case "No Password Access":
-        this.events.emit("waitingForApproval", {});
-        return;
-      default: {
-        const e = new SessionError(err, "login");
-        this.loginReject?.(e);
-        this.shutdown({ reason: err, remote: true, retryable: false });
-      }
-    }
-  }
-
   private onLoggedIn(pi: PeerInfo): void {
     this.applyPeerInfo(pi);
     this.video = new VideoPipeline(
@@ -787,12 +565,8 @@ export class Session {
     this.audio.setMuted(this.settingsValue.disableAudio);
     this.setState("connected");
     this.statsTimer = setInterval(() => this.emitStats(), 1000);
-    const remembered = this.hash ? new Uint8Array(this.hash) : null;
-    this.events.emit("connected", { peer: this.peerInfo!, rememberedHash: remembered });
+    this.events.emit("connected", { peer: this.peerInfo!, rememberedHash: this.link.rememberedHash });
     this.emitDisplay();
-    const resolve = this.loginResolve;
-    this.loginResolve = this.loginReject = null;
-    resolve?.();
   }
 
   private applyPeerInfo(pi: PeerInfo): void {
@@ -884,8 +658,7 @@ export class Session {
         this.onSwitchDisplay(u.value);
         return;
       case "closeReason": {
-        const e = new SessionError(u.value, "remote-closed");
-        this.loginReject?.(e);
+        this.link.rejectLogin(new SessionError(u.value, "remote-closed"));
         this.shutdown({ reason: u.value || "closed by the remote side", remote: true, retryable: false });
         return;
       }
@@ -1153,10 +926,6 @@ export class Session {
     else if (code.startsWith("Alt")) this.mods.alt = down;
     else if (code.startsWith("Meta")) this.mods.meta = down;
   }
-}
-
-function isRetryable(e: SessionError): boolean {
-  return e.code === "network" || e.code === "timeout" || e.code === "offline";
 }
 
 function isPrintable(key: string): boolean {
