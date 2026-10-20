@@ -167,6 +167,13 @@ export const en = {
     passwordDesc: "Enter the device password to open its terminal.",
     ended: "The terminal session ended: {{reason}}",
     keys: "Extra keys",
+    settings: "Terminal settings",
+    settingsDesc: "Saved in this browser.",
+    fontFamily: "Font",
+    fontFamilyHint: "A font installed on this computer, e.g. a Nerd Font for prompt icons. Empty: the system monospace font.",
+    fontSize: "Font size",
+    nerdSymbols: "Built-in Nerd Font icons",
+    nerdSymbolsHint: "Shows the icons of prompts such as oh-my-posh or starship with any font (loads about 1.6 MB once).",
   },
   files: {
     title: "Files",
