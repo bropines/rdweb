@@ -173,6 +173,7 @@ function RemoteFiles(props: RemoteDesktopProps) {
         myId={props.myId || undefined}
         onBack={props.onLeave}
         title={props.peerId}
+        storageKey={storageKey}
       />
     </div>
   );
@@ -706,6 +707,7 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
         myId={props.myId || undefined}
         incoming={incoming}
         onIncomingDone={() => setIncoming(null)}
+        storageKey={storageKey}
       />
       <SettingsSheet
         open={settingsOpen}
