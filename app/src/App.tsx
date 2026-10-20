@@ -1,4 +1,4 @@
-import { FolderOpen, Info, Languages, Monitor, Moon, Pencil, Plus, Server, Sun, SquareTerminal, Trash2 } from "lucide-react";
+import { Download, FolderOpen, Info, Languages, Monitor, Moon, Pencil, Plus, Server, Sun, SquareTerminal, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { clearStoredData, RemoteDesktop, Toaster, type Lang } from "rdweb/react";
@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 import { BUILD, COMMIT_URL, SHORT_COMMIT } from "./build";
 import { AppI18n, appTranslator, initialLang, storeLang, useAppI18n } from "./i18n";
+import { applyUpdate, promptInstall, useInstallKind, useUpdateReady } from "./pwa";
 import { ServerEditor } from "./ServerEditor";
 import {
   clearAppData,
@@ -57,6 +58,13 @@ export function App() {
   useEffect(() => {
     document.documentElement.lang = lang;
   }, [lang]);
+
+  // A new version was installed in the background: offer to switch to it.
+  const updateReady = useUpdateReady();
+  useEffect(() => {
+    if (!updateReady) return;
+    toast(i18n.t("update.available"), { id: "rdweb-update", duration: Infinity, action: { label: i18n.t("update.reload"), onClick: () => applyUpdate() } });
+  }, [updateReady, i18n]);
 
   const setLang = (l: Lang) => {
     setLangState(l);
@@ -147,6 +155,8 @@ function Home(p: HomeProps) {
   const [editing, setEditing] = useState<Partial<ServerEntry> | null>(null);
   const [deleting, setDeleting] = useState<ServerEntry | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const installKind = useInstallKind();
+  const [installHelp, setInstallHelp] = useState(false);
   const [serverId, setServerId] = useState<string>(() => {
     const last = readLastServer();
     return p.servers.find((s) => s.id === last)?.id ?? p.servers[0]?.id ?? "";
@@ -204,6 +214,18 @@ function Home(p: HomeProps) {
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+          {installKind && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={t("install.button")}
+              title={t("install.button")}
+              onClick={() => (installKind === "prompt" ? void promptInstall().catch(() => {}) : setInstallHelp(true))}
+            >
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">{t("install.button")}</span>
+            </Button>
+          )}
           <Button variant="ghost" size="icon" aria-label={t("about.title")} title={t("about.title")} onClick={() => setAboutOpen(true)}>
             <Info className="h-4 w-4" />
           </Button>
@@ -380,6 +402,19 @@ function Home(p: HomeProps) {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={installHelp} onOpenChange={setInstallHelp}>
+        <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md" closeLabel={t("about.close")}>
+          <DialogHeader>
+            <DialogTitle>{t("install.title")}</DialogTitle>
+            <DialogDescription>{t(installKind === "macos" ? "install.macos" : "install.ios")}</DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{t("install.hint")}</p>
+          <DialogFooter>
+            <Button onClick={() => setInstallHelp(false)}>{t("about.close")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <About
         open={aboutOpen}
         onOpenChange={setAboutOpen}
@@ -418,6 +453,7 @@ function About({ open, onOpenChange, onClear }: { open: boolean; onOpenChange: (
           </ul>
           <h3 className="pt-2 font-medium">{t("editor.requirementsTitle")}</h3>
           <p className="text-muted-foreground">{t("editor.requirements")}</p>
+          <p className="pt-2 text-muted-foreground">{t("about.install")}</p>
           <p className="pt-2">
             <a className="text-primary underline-offset-4 hover:underline" href={SOURCE_URL} target="_blank" rel="noreferrer noopener">
               {t("about.source")}: github.com/bropines/rdweb
