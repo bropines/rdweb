@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file rendezvous.proto.
  */
 export const file_rendezvous: GenFile = /*@__PURE__*/
-  fileDesc("ChByZW5kZXp2b3VzLnByb3RvEhByZHdlYi5yZW5kZXp2b3VzItYBChBQdW5jaEhvbGVSZXF1ZXN0EgoKAmlkGAEgASgJEisKCG5hdF90eXBlGAIgASgOMhkucmR3ZWIucmVuZGV6dm91cy5OYXRUeXBlEhMKC2xpY2VuY2Vfa2V5GAMgASgJEi0KCWNvbm5fdHlwZRgEIAEoDjIaLnJkd2ViLnJlbmRlenZvdXMuQ29ublR5cGUSDQoFdG9rZW4YBSABKAkSDwoHdmVyc2lvbhgGIAEoCRIQCgh1ZHBfcG9ydBgHIAEoBRITCgtmb3JjZV9yZWxheRgIIAEoCCLSAgoRUHVuY2hIb2xlUmVzcG9uc2USEwoLc29ja2V0X2FkZHIYASABKAwSCgoCcGsYAiABKAwSPAoHZmFpbHVyZRgDIAEoDjIrLnJkd2ViLnJlbmRlenZvdXMuUHVuY2hIb2xlUmVzcG9uc2UuRmFpbHVyZRIUCgxyZWxheV9zZXJ2ZXIYBCABKAkSLQoIbmF0X3R5cGUYBSABKA4yGS5yZHdlYi5yZW5kZXp2b3VzLk5hdFR5cGVIABISCghpc19sb2NhbBgGIAEoCEgAEhUKDW90aGVyX2ZhaWx1cmUYByABKAkSEAoIZmVlZGJhY2sYCCABKAUiUwoHRmFpbHVyZRIQCgxJRF9OT1RfRVhJU1QQABILCgdPRkZMSU5FEAISFAoQTElDRU5TRV9NSVNNQVRDSBADEhMKD0xJQ0VOU0VfT1ZFUlVTRRAEQgcKBXVuaW9uIrYBCgxSZXF1ZXN0UmVsYXkSCgoCaWQYASABKAkSDAoEdXVpZBgCIAEoCRITCgtzb2NrZXRfYWRkchgDIAEoDBIUCgxyZWxheV9zZXJ2ZXIYBCABKAkSDgoGc2VjdXJlGAUgASgIEhMKC2xpY2VuY2Vfa2V5GAYgASgJEi0KCWNvbm5fdHlwZRgHIAEoDjIaLnJkd2ViLnJlbmRlenZvdXMuQ29ublR5cGUSDQoFdG9rZW4YCCABKAkipwEKDVJlbGF5UmVzcG9uc2USEwoLc29ja2V0X2FkZHIYASABKAwSDAoEdXVpZBgCIAEoCRIUCgxyZWxheV9zZXJ2ZXIYAyABKAkSDAoCaWQYBCABKAlIABIMCgJwaxgFIAEoDEgAEhUKDXJlZnVzZV9yZWFzb24YBiABKAkSDwoHdmVyc2lvbhgHIAEoCRIQCghmZWVkYmFjaxgJIAEoBUIHCgV1bmlvbiIqCg1PbmxpbmVSZXF1ZXN0EgoKAmlkGAEgASgJEg0KBXBlZXJzGAIgAygJIiAKDk9ubGluZVJlc3BvbnNlEg4KBnN0YXRlcxgBIAEoDCKOAwoRUmVuZGV6dm91c01lc3NhZ2USQAoScHVuY2hfaG9sZV9yZXF1ZXN0GAggASgLMiIucmR3ZWIucmVuZGV6dm91cy5QdW5jaEhvbGVSZXF1ZXN0SAASQgoTcHVuY2hfaG9sZV9yZXNwb25zZRgLIAEoCzIjLnJkd2ViLnJlbmRlenZvdXMuUHVuY2hIb2xlUmVzcG9uc2VIABI3Cg1yZXF1ZXN0X3JlbGF5GBIgASgLMh4ucmR3ZWIucmVuZGV6dm91cy5SZXF1ZXN0UmVsYXlIABI5Cg5yZWxheV9yZXNwb25zZRgTIAEoCzIfLnJkd2ViLnJlbmRlenZvdXMuUmVsYXlSZXNwb25zZUgAEjkKDm9ubGluZV9yZXF1ZXN0GBcgASgLMh8ucmR3ZWIucmVuZGV6dm91cy5PbmxpbmVSZXF1ZXN0SAASOwoPb25saW5lX3Jlc3BvbnNlGBggASgLMiAucmR3ZWIucmVuZGV6dm91cy5PbmxpbmVSZXNwb25zZUgAQgcKBXVuaW9uKmkKCENvbm5UeXBlEhAKDERFRkFVTFRfQ09OThAAEhEKDUZJTEVfVFJBTlNGRVIQARIQCgxQT1JUX0ZPUldBUkQQAhIHCgNSRFAQAxIPCgtWSUVXX0NBTUVSQRAEEgwKCFRFUk1JTkFMEAUqOQoHTmF0VHlwZRIPCgtVTktOT1dOX05BVBAAEg4KCkFTWU1NRVRSSUMQARINCglTWU1NRVRSSUMQAmIGcHJvdG8z");
+  fileDesc("ChByZW5kZXp2b3VzLnByb3RvEhByZHdlYi5yZW5kZXp2b3VzItYBChBQdW5jaEhvbGVSZXF1ZXN0EgoKAmlkGAEgASgJEisKCG5hdF90eXBlGAIgASgOMhkucmR3ZWIucmVuZGV6dm91cy5OYXRUeXBlEhMKC2xpY2VuY2Vfa2V5GAMgASgJEi0KCWNvbm5fdHlwZRgEIAEoDjIaLnJkd2ViLnJlbmRlenZvdXMuQ29ublR5cGUSDQoFdG9rZW4YBSABKAkSDwoHdmVyc2lvbhgGIAEoCRIQCgh1ZHBfcG9ydBgHIAEoBRITCgtmb3JjZV9yZWxheRgIIAEoCCLSAgoRUHVuY2hIb2xlUmVzcG9uc2USEwoLc29ja2V0X2FkZHIYASABKAwSCgoCcGsYAiABKAwSPAoHZmFpbHVyZRgDIAEoDjIrLnJkd2ViLnJlbmRlenZvdXMuUHVuY2hIb2xlUmVzcG9uc2UuRmFpbHVyZRIUCgxyZWxheV9zZXJ2ZXIYBCABKAkSLQoIbmF0X3R5cGUYBSABKA4yGS5yZHdlYi5yZW5kZXp2b3VzLk5hdFR5cGVIABISCghpc19sb2NhbBgGIAEoCEgAEhUKDW90aGVyX2ZhaWx1cmUYByABKAkSEAoIZmVlZGJhY2sYCCABKAUiUwoHRmFpbHVyZRIQCgxJRF9OT1RfRVhJU1QQABILCgdPRkZMSU5FEAISFAoQTElDRU5TRV9NSVNNQVRDSBADEhMKD0xJQ0VOU0VfT1ZFUlVTRRAEQgcKBXVuaW9uIrYBCgxSZXF1ZXN0UmVsYXkSCgoCaWQYASABKAkSDAoEdXVpZBgCIAEoCRITCgtzb2NrZXRfYWRkchgDIAEoDBIUCgxyZWxheV9zZXJ2ZXIYBCABKAkSDgoGc2VjdXJlGAUgASgIEhMKC2xpY2VuY2Vfa2V5GAYgASgJEi0KCWNvbm5fdHlwZRgHIAEoDjIaLnJkd2ViLnJlbmRlenZvdXMuQ29ublR5cGUSDQoFdG9rZW4YCCABKAkipwEKDVJlbGF5UmVzcG9uc2USEwoLc29ja2V0X2FkZHIYASABKAwSDAoEdXVpZBgCIAEoCRIUCgxyZWxheV9zZXJ2ZXIYAyABKAkSDAoCaWQYBCABKAlIABIMCgJwaxgFIAEoDEgAEhUKDXJlZnVzZV9yZWFzb24YBiABKAkSDwoHdmVyc2lvbhgHIAEoCRIQCghmZWVkYmFjaxgJIAEoBUIHCgV1bmlvbiIqCg1PbmxpbmVSZXF1ZXN0EgoKAmlkGAEgASgJEg0KBXBlZXJzGAIgAygJIiAKDk9ubGluZVJlc3BvbnNlEg4KBnN0YXRlcxgBIAEoDCJDCgtLZXlFeGNoYW5nZRIMCgRrZXlzGAEgAygMEg8KB3ZlcnNpb24YAiABKA0SFQoNc2lnbmVkX3BhcmFtcxgDIAEoDCLFAwoRUmVuZGV6dm91c01lc3NhZ2USQAoScHVuY2hfaG9sZV9yZXF1ZXN0GAggASgLMiIucmR3ZWIucmVuZGV6dm91cy5QdW5jaEhvbGVSZXF1ZXN0SAASQgoTcHVuY2hfaG9sZV9yZXNwb25zZRgLIAEoCzIjLnJkd2ViLnJlbmRlenZvdXMuUHVuY2hIb2xlUmVzcG9uc2VIABI3Cg1yZXF1ZXN0X3JlbGF5GBIgASgLMh4ucmR3ZWIucmVuZGV6dm91cy5SZXF1ZXN0UmVsYXlIABI5Cg5yZWxheV9yZXNwb25zZRgTIAEoCzIfLnJkd2ViLnJlbmRlenZvdXMuUmVsYXlSZXNwb25zZUgAEjkKDm9ubGluZV9yZXF1ZXN0GBcgASgLMh8ucmR3ZWIucmVuZGV6dm91cy5PbmxpbmVSZXF1ZXN0SAASOwoPb25saW5lX3Jlc3BvbnNlGBggASgLMiAucmR3ZWIucmVuZGV6dm91cy5PbmxpbmVSZXNwb25zZUgAEjUKDGtleV9leGNoYW5nZRgZIAEoCzIdLnJkd2ViLnJlbmRlenZvdXMuS2V5RXhjaGFuZ2VIAEIHCgV1bmlvbippCghDb25uVHlwZRIQCgxERUZBVUxUX0NPTk4QABIRCg1GSUxFX1RSQU5TRkVSEAESEAoMUE9SVF9GT1JXQVJEEAISBwoDUkRQEAMSDwoLVklFV19DQU1FUkEQBBIMCghURVJNSU5BTBAFKjkKB05hdFR5cGUSDwoLVU5LTk9XTl9OQVQQABIOCgpBU1lNTUVUUklDEAESDQoJU1lNTUVUUklDEAJiBnByb3RvMw");
 
 /**
  * Ask hbbs to introduce us to a peer. A browser cannot punch holes, so it
@@ -322,6 +322,38 @@ export const OnlineResponseSchema: GenMessage<OnlineResponse> = /*@__PURE__*/
   messageDesc(file_rendezvous, 5);
 
 /**
+ * hbbs sends one unsolicited as the first frame of a TCP connection when it
+ * has a key: keys[0] is its per-process X25519 public key signed with the
+ * server's Ed25519 key (crypto_sign combined form). hbbs does not send it on
+ * WebSocket connections.
+ *
+ * @generated from message rdweb.rendezvous.KeyExchange
+ */
+export type KeyExchange = Message<"rdweb.rendezvous.KeyExchange"> & {
+  /**
+   * @generated from field: repeated bytes keys = 1;
+   */
+  keys: Uint8Array[];
+
+  /**
+   * @generated from field: uint32 version = 2;
+   */
+  version: number;
+
+  /**
+   * @generated from field: bytes signed_params = 3;
+   */
+  signedParams: Uint8Array;
+};
+
+/**
+ * Describes the message rdweb.rendezvous.KeyExchange.
+ * Use `create(KeyExchangeSchema)` to create a new message.
+ */
+export const KeyExchangeSchema: GenMessage<KeyExchange> = /*@__PURE__*/
+  messageDesc(file_rendezvous, 6);
+
+/**
  * @generated from message rdweb.rendezvous.RendezvousMessage
  */
 export type RendezvousMessage = Message<"rdweb.rendezvous.RendezvousMessage"> & {
@@ -364,6 +396,12 @@ export type RendezvousMessage = Message<"rdweb.rendezvous.RendezvousMessage"> & 
      */
     value: OnlineResponse;
     case: "onlineResponse";
+  } | {
+    /**
+     * @generated from field: rdweb.rendezvous.KeyExchange key_exchange = 25;
+     */
+    value: KeyExchange;
+    case: "keyExchange";
   } | { case: undefined; value?: undefined };
 };
 
@@ -372,7 +410,7 @@ export type RendezvousMessage = Message<"rdweb.rendezvous.RendezvousMessage"> & 
  * Use `create(RendezvousMessageSchema)` to create a new message.
  */
 export const RendezvousMessageSchema: GenMessage<RendezvousMessage> = /*@__PURE__*/
-  messageDesc(file_rendezvous, 6);
+  messageDesc(file_rendezvous, 7);
 
 /**
  * @generated from enum rdweb.rendezvous.ConnType

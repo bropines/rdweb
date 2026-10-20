@@ -1,5 +1,7 @@
 export { Session, SessionError, CLIENT_VERSION, MOUSE_BUTTON, MOUSE_TYPE } from "./session.js";
 export { relayUrlNextTo, announcedRelayUrl } from "./connector.js";
+export { checkServer } from "./check.js";
+export type { ServerCheck, ServerCheckCode, ServerCheckOptions, ServerCheckStatus, ServerCheckStep, ServerCheckStepId } from "./check.js";
 export { RDWEB_VERSION } from "./version.js";
 export { TerminalSession } from "./terminal.js";
 export type { TerminalOptions, TerminalPeer, TerminalEventMap } from "./terminal.js";

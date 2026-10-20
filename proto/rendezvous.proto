@@ -91,6 +91,16 @@ message OnlineResponse {
   bytes states = 1;
 }
 
+// hbbs sends one unsolicited as the first frame of a TCP connection when it
+// has a key: keys[0] is its per-process X25519 public key signed with the
+// server's Ed25519 key (crypto_sign combined form). hbbs does not send it on
+// WebSocket connections.
+message KeyExchange {
+  repeated bytes keys = 1;
+  uint32 version = 2;
+  bytes signed_params = 3;
+}
+
 message RendezvousMessage {
   oneof union {
     PunchHoleRequest punch_hole_request = 8;
@@ -99,5 +109,6 @@ message RendezvousMessage {
     RelayResponse relay_response = 19;
     OnlineRequest online_request = 23;
     OnlineResponse online_response = 24;
+    KeyExchange key_exchange = 25;
   }
 }
