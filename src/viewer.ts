@@ -113,7 +113,10 @@ export class Viewer {
   private lastTapAt = 0;
   private pinchStart = { dist: 0, zoom: 1, midX: 0, midY: 0, panX: 0, panY: 0 };
   private scrollAcc = { x: 0, y: 0 };
-  private pasteTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A Ctrl/Cmd+V waiting for the browser's paste event. */
+  private pendingPaste: { timer: ReturnType<typeof setTimeout>; upSeen: boolean } | null = null;
+  /** The V of a handled paste is still down locally: drop its keyup. */
+  private swallowVUp = false;
   private heldButtons = new Set<MouseButtonName>();
   private destroyed = false;
 
@@ -895,12 +898,16 @@ export class Viewer {
     if (e.isComposing || e.keyCode === 229) return; // IME is composing; text arrives via input events
     if (!e.code || e.key === "Unidentified") return; // soft keyboards: handled by beforeinput
     // Ctrl/Cmd+V: let the browser fire "paste" so the remote clipboard is
-    // updated before the keystroke reaches the remote side.
+    // updated first; then the remote side's own paste shortcut is pressed.
     if (down && (e.ctrlKey || e.metaKey) && e.code === "KeyV" && !e.altKey && document.activeElement === this.ime) {
-      this.pasteTimer = setTimeout(() => {
-        this.pasteTimer = null;
-        this.sendKey(e.code, e.key, true);
-      }, 150);
+      if (!this.pendingPaste) this.pendingPaste = { timer: setTimeout(() => this.endPaste(null), 150), upSeen: false };
+      return;
+    }
+    if (!down && e.code === "KeyV" && (this.pendingPaste || this.swallowVUp)) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (this.pendingPaste) this.pendingPaste.upSeen = true;
+      else this.swallowVUp = false;
       return;
     }
     e.preventDefault();
@@ -916,24 +923,41 @@ export class Viewer {
   private onPaste(e: ClipboardEvent): void {
     e.preventDefault();
     if (e.clipboardData?.files.length) {
-      // files: offered for upload instead of pressing Ctrl+V remotely
-      if (this.pasteTimer) {
-        clearTimeout(this.pasteTimer);
-        this.pasteTimer = null;
+      // files: offered for upload instead of pasting remotely
+      if (this.pendingPaste) {
+        clearTimeout(this.pendingPaste.timer);
+        this.swallowVUp = !this.pendingPaste.upSeen;
+        this.pendingPaste = null;
       }
       this.emit("files", { dataTransfer: e.clipboardData });
       this.ime.value = "";
       return;
     }
     const text = e.clipboardData?.getData("text/plain") ?? "";
-    if (text) this.session.sendClipboard(text);
-    if (this.pasteTimer) {
-      clearTimeout(this.pasteTimer);
-      this.pasteTimer = null;
-      // give the clipboard message a head start, then press V
-      setTimeout(() => this.sendKey("KeyV", "v", true), 30);
-    }
+    if (this.pendingPaste) this.endPaste(text);
+    else if (text) this.session.sendClipboard(text);
     this.ime.value = "";
+  }
+
+  /**
+   * Finishes a Ctrl/Cmd+V. text: what the browser pasted (sent to the remote
+   * clipboard, then the remote paste shortcut); null: no paste event came
+   * (e.g. Ctrl+V on macOS), so the keystroke goes through as typed.
+   */
+  private endPaste(text: string | null): void {
+    const p = this.pendingPaste;
+    if (!p) return;
+    clearTimeout(p.timer);
+    this.pendingPaste = null;
+    if (text === null) {
+      this.sendKey("KeyV", "v", true);
+      if (p.upSeen) this.sendKey("KeyV", "v", false);
+      return;
+    }
+    if (text) this.session.sendClipboard(text);
+    this.swallowVUp = !p.upSeen;
+    // give the clipboard message a head start
+    setTimeout(() => this.session.pasteShortcut(), 30);
   }
 
   private onBeforeInput(e: InputEvent): void {

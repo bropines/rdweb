@@ -1,4 +1,4 @@
-import { ArrowDown, ChevronLeft, RefreshCw, Settings2 } from "lucide-react";
+import { ArrowDown, ChevronLeft, Plus, RefreshCw, Settings2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { TerminalSession } from "../terminal.js";
@@ -97,60 +97,125 @@ function injectXtermCss(): void {
   document.head.appendChild(style);
 }
 
-/** A remote shell only (RustDesk "Terminal"), full screen. */
+const MAX_TABS = 8;
+
+type XtermLib = {
+  Terminal: typeof import("@xterm/xterm").Terminal;
+  FitAddon: typeof import("@xterm/addon-fit").FitAddon;
+};
+
+interface Pane {
+  term: import("@xterm/xterm").Terminal;
+  fit: { fit(): void };
+}
+
+interface Tab {
+  id: number;
+  exited: boolean;
+}
+
+/** Remote shells only (RustDesk "Terminal"), full screen, in tabs over one connection. */
 export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => void }) {
   const { t } = useI18n();
-  const hostRef = useRef<HTMLDivElement>(null);
+  const storageKey = props.storageKey ?? DEFAULT_STORAGE_KEY;
   const sessRef = useRef<TerminalSession | null>(null);
+  const libRef = useRef<XtermLib | null>(null);
+  const panes = useRef(new Map<number, Pane>());
+  const hosts = useRef(new Map<number, HTMLDivElement>());
+  const areaRef = useRef<HTMLDivElement>(null);
+  const nextId = useRef(1);
   const [conn, setConn] = useState<ConnState>("connecting");
   const [error, setError] = useState("");
   const [wrong, setWrong] = useState(false);
   const [secret, setSecret] = useState("");
   const [ended, setEnded] = useState<string | null>(null);
   const [title, setTitle] = useState(props.peerId);
-  const storageKeyRef = useRef(props.storageKey ?? DEFAULT_STORAGE_KEY);
-  const [prefs, setPrefs] = useState<TerminalPrefs>(() => loadTerminalPrefs(storageKeyRef.current));
+  const [prefs, setPrefs] = useState<TerminalPrefs>(() => loadTerminalPrefs(storageKey));
+  const prefsRef = useRef(prefs);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [scrolledUp, setScrolledUp] = useState(false);
-  const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
-  const fitRef = useRef<{ fit(): void } | null>(null);
+  const [tabs, setTabs] = useState<Tab[]>([{ id: 0, exited: false }]);
+  const [active, setActive] = useState(0);
+  const activeRef = useRef(0);
   const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
 
+  const updateScrolled = (id: number) => {
+    if (id !== activeRef.current) return;
+    const b = panes.current.get(id)?.term.buffer.active;
+    if (b) setScrolledUp(b.viewportY < b.baseY);
+  };
+
+  const fitActive = () => {
+    const id = activeRef.current;
+    const p = panes.current.get(id);
+    if (!p) return;
+    try {
+      p.fit.fit();
+      sessRef.current?.resize(p.term.cols, p.term.rows, id);
+    } catch {
+      /* hidden or detached */
+    }
+  };
+
+  /** An xterm in the tab's host element; keystrokes go to that tab's shell. */
+  const createPane = (id: number): Pane | null => {
+    const lib = libRef.current;
+    const el = hosts.current.get(id);
+    if (!lib || !el) return null;
+    const term = new lib.Terminal({
+      cursorBlink: true,
+      fontFamily: fontStack(prefsRef.current),
+      fontSize: prefsRef.current.fontSize,
+      scrollback: 10000,
+      theme: { background: "#0a0a0a" },
+    });
+    const fit = new lib.FitAddon();
+    term.loadAddon(fit);
+    term.open(el);
+    fit.fit();
+    term.onData((d) => sessRef.current?.write(d, id));
+    // Shift+PageUp/PageDown/Home/End page through the scrollback (like most terminals)
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== "keydown" || !e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return true;
+      const act: Record<string, () => void> = {
+        PageUp: () => term.scrollPages(-1),
+        PageDown: () => term.scrollPages(1),
+        Home: () => term.scrollToTop(),
+        End: () => term.scrollToBottom(),
+      };
+      const fn = act[e.key];
+      if (!fn) return true;
+      fn();
+      return false;
+    });
+    term.onScroll(() => updateScrolled(id));
+    term.onWriteParsed(() => updateScrolled(id));
+    const pane = { term, fit };
+    panes.current.set(id, pane);
+    return pane;
+  };
+
+  // Load xterm (and the icon font), open the first tab, connect.
   useEffect(() => {
-    const el = hostRef.current;
-    if (!el) return;
     let disposed = false;
-    let ro: ResizeObserver | null = null;
-    let term: import("@xterm/xterm").Terminal | null = null;
     let opened = false;
-    const storageKey = props.storageKey ?? DEFAULT_STORAGE_KEY;
+    let ro: ResizeObserver | null = null;
     void (async () => {
       const [{ Terminal }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]);
-      const initial = loadTerminalPrefs(storageKey);
-      if (initial.nerdSymbols) await loadNerdSymbols();
+      if (prefsRef.current.nerdSymbols) await loadNerdSymbols();
       if (disposed) return;
       injectXtermCss();
-      term = new Terminal({
-        cursorBlink: true,
-        fontFamily: fontStack(initial),
-        fontSize: initial.fontSize,
-        scrollback: 10000,
-        theme: { background: "#0a0a0a" },
-      });
-      const fit = new FitAddon();
-      term.loadAddon(fit);
-      term.open(el);
-      fit.fit();
-      termRef.current = term;
-      fitRef.current = fit;
+      libRef.current = { Terminal, FitAddon };
+      const first = createPane(0);
+      if (!first) return;
       const s = new TerminalSession({
         peerId: props.peerId,
         server: props.server,
         rememberedHash: loadRememberedHash(props.server.key, props.peerId, storageKey) ?? props.credentials?.rememberedHash,
         myName: props.myName,
         myId: props.myId || undefined,
-        cols: term.cols,
-        rows: term.rows,
+        cols: first.term.cols,
+        rows: first.term.rows,
       });
       sessRef.current = s;
       let hostPasswordTried = !props.credentials?.password;
@@ -168,48 +233,24 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         setConn("twoFactor");
       });
       s.on("waitingForApproval", () => setConn("waiting"));
-      s.on("data", ({ data }) => term?.write(data));
+      s.on("data", ({ terminalId, data }) => panes.current.get(terminalId)?.term.write(data));
+      s.on("exit", ({ terminalId, code }) => {
+        panes.current.get(terminalId)?.term.write(`\r\n[${t("terminal.exited", { code })}]\r\n`);
+        setTabs((list) => list.map((x) => (x.id === terminalId ? { ...x, exited: true } : x)));
+      });
       s.on("close", (info) => {
         // before the shell opened, connect() rejects and shows the error instead
         if (!disposed && opened) setEnded(info.reason);
       });
-      term.onData((d) => s.write(d));
-      // Shift+PageUp/PageDown/Home/End page through the scrollback (like most terminals)
-      term.attachCustomKeyEventHandler((e) => {
-        if (e.type !== "keydown" || !e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || !term) return true;
-        const act: Record<string, () => void> = {
-          PageUp: () => term!.scrollPages(-1),
-          PageDown: () => term!.scrollPages(1),
-          Home: () => term!.scrollToTop(),
-          End: () => term!.scrollToBottom(),
-        };
-        const fn = act[e.key];
-        if (!fn) return true;
-        fn();
-        return false;
-      });
-      const updateScrolled = () => {
-        const b = term?.buffer.active;
-        if (b) setScrolledUp(b.viewportY < b.baseY);
-      };
-      term.onScroll(updateScrolled);
-      term.onWriteParsed(updateScrolled);
-      ro = new ResizeObserver(() => {
-        try {
-          fit.fit();
-          if (term) s.resize(term.cols, term.rows);
-        } catch {
-          /* hidden or detached */
-        }
-      });
-      ro.observe(el);
+      ro = new ResizeObserver(fitActive);
+      if (areaRef.current) ro.observe(areaRef.current);
       await s.connect();
       opened = true;
       if (disposed) return;
       const p = s.peer;
       if (p) setTitle(p.hostname ? `${p.hostname} · ${props.peerId}` : props.peerId);
       setConn("ready");
-      term.focus();
+      first.term.focus();
     })().catch((e: Error & { code?: string }) => {
       if (disposed) return;
       setError(e.code && KNOWN_ERRORS.includes(e.code) ? t(`errors.${e.code}`, { detail: e.message }) : e.message);
@@ -220,28 +261,70 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       ro?.disconnect();
       sessRef.current?.close("closed");
       sessRef.current = null;
-      term?.dispose();
+      for (const p of panes.current.values()) p.term.dispose();
+      panes.current.clear();
     };
     // one session per mount; the host remounts to reconnect
   }, []);
 
+  // A new tab: its host element exists now; open a shell for it.
+  useEffect(() => {
+    const s = sessRef.current;
+    if (!s || !libRef.current) return;
+    for (const tab of tabs) {
+      if (panes.current.has(tab.id) || tab.exited) continue;
+      const pane = createPane(tab.id);
+      if (!pane) continue;
+      s.openTerminal(tab.id, pane.term.cols, pane.term.rows).catch((e: Error) => {
+        pane.term.write(`\r\n[${e.message}]\r\n`);
+        setTabs((list) => list.map((x) => (x.id === tab.id ? { ...x, exited: true } : x)));
+      });
+    }
+  }, [tabs]);
+
+  // Switching tabs: fit, resize that shell, focus.
+  useEffect(() => {
+    activeRef.current = active;
+    fitActive();
+    panes.current.get(active)?.term.focus();
+    updateScrolled(active);
+  }, [active]);
+
+  const addTab = () => {
+    if (conn !== "ready" || tabs.length >= MAX_TABS) return;
+    const id = nextId.current++;
+    setTabs((list) => [...list, { id, exited: false }]);
+    setActive(id);
+  };
+
+  const closeTab = (id: number) => {
+    const rest = tabs.filter((x) => x.id !== id);
+    if (rest.length === 0) {
+      props.onLeave();
+      return;
+    }
+    sessRef.current?.closeTerminal(id);
+    panes.current.get(id)?.term.dispose();
+    panes.current.delete(id);
+    hosts.current.delete(id);
+    setTabs(rest);
+    if (active === id) setActive(rest[rest.length - 1]!.id);
+  };
+
   const applyPrefs = async (next: TerminalPrefs) => {
     setPrefs(next);
-    saveTerminalPrefs(storageKeyRef.current, next);
+    prefsRef.current = next;
+    saveTerminalPrefs(storageKey, next);
     if (next.nerdSymbols) await loadNerdSymbols();
-    const term = termRef.current;
-    if (!term) return;
-    term.options.fontFamily = fontStack(next);
-    term.options.fontSize = next.fontSize;
-    try {
-      fitRef.current?.fit();
-      sessRef.current?.resize(term.cols, term.rows);
-    } catch {
-      /* not attached */
+    for (const p of panes.current.values()) {
+      p.term.options.fontFamily = fontStack(next);
+      p.term.options.fontSize = next.fontSize;
     }
+    fitActive();
   };
 
   const overlay = conn !== "ready" && !ended;
+  const ready = conn === "ready" && !ended;
   return (
     <div className={cn(SCOPE, "fixed inset-0 flex flex-col bg-[#0a0a0a] text-white", props.className)}>
       <div className="flex shrink-0 items-center gap-2 border-b border-white/10 px-2 py-2">
@@ -256,9 +339,55 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         </Button>
       </div>
       <TerminalSettings open={settingsOpen} onOpenChange={setSettingsOpen} prefs={prefs} onApply={(p) => void applyPrefs(p)} />
-      <div className="relative min-h-0 flex-1 p-1.5">
-        <div ref={hostRef} className="h-full w-full" />
-        {scrolledUp && conn === "ready" && !ended && (
+      {ready && (
+        <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-white/10 px-2 py-1" role="tablist" aria-label={t("terminal.tabs")}>
+          {tabs.map((tab, i) => (
+            <div
+              key={tab.id}
+              className={cn(
+                "flex shrink-0 items-center rounded-md text-xs",
+                tab.id === active ? "bg-white/15 text-white" : "text-white/60 hover:bg-white/10 hover:text-white",
+              )}
+            >
+              <button type="button" role="tab" aria-selected={tab.id === active} className="px-2.5 py-1.5" onClick={() => setActive(tab.id)}>
+                {t("terminal.tab", { n: i + 1 })}
+                {tab.exited ? " ·" : ""}
+              </button>
+              <button
+                type="button"
+                className="mr-1 rounded p-0.5 hover:bg-white/20"
+                aria-label={t("terminal.closeTab")}
+                title={t("terminal.closeTab")}
+                onClick={() => closeTab(tab.id)}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+          {tabs.length < MAX_TABS && (
+            <button
+              type="button"
+              className="shrink-0 rounded-md p-1.5 text-white/60 hover:bg-white/10 hover:text-white"
+              aria-label={t("terminal.newTab")}
+              title={t("terminal.newTab")}
+              onClick={addTab}
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      )}
+      <div ref={areaRef} className="relative min-h-0 flex-1 p-1.5">
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            ref={(el) => {
+              if (el) hosts.current.set(tab.id, el);
+            }}
+            className={cn("h-full w-full", tab.id !== active && "hidden")}
+          />
+        ))}
+        {scrolledUp && ready && (
           <Button
             size="sm"
             variant="secondary"
@@ -266,8 +395,9 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
             aria-label={t("terminal.toBottom")}
             title={t("terminal.toBottom")}
             onClick={() => {
-              termRef.current?.scrollToBottom();
-              termRef.current?.focus();
+              const p = panes.current.get(active);
+              p?.term.scrollToBottom();
+              p?.term.focus();
             }}
           >
             <ArrowDown className="h-4 w-4" />
@@ -313,7 +443,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
           </div>
         )}
       </div>
-      {touch && conn === "ready" && !ended && (
+      {touch && ready && (
         <div className="flex shrink-0 gap-1 overflow-x-auto border-t border-white/10 px-1.5 py-1" aria-label={t("terminal.keys")}>
           {EXTRA_KEYS.map(([label, seq]) => (
             <Button
@@ -322,7 +452,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
               variant="ghost"
               className="h-8 shrink-0 px-2.5 font-mono text-white hover:bg-white/10 hover:text-white"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => sessRef.current?.write(seq)}
+              onClick={() => sessRef.current?.write(seq, active)}
             >
               {label}
             </Button>

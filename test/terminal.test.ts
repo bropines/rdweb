@@ -20,18 +20,18 @@ function peerShell(opts: { refuse?: string } = {}) {
         peer.send({
           union: {
             case: "terminalResponse",
-            value: { union: { case: "opened", value: { terminalId: 0, success: !opts.refuse, message: opts.refuse ?? "", pid: 42 } } },
+            value: { union: { case: "opened", value: { terminalId: a.value.terminalId, success: !opts.refuse, message: opts.refuse ?? "", pid: 42 } } },
           },
         });
-        if (!opts.refuse) {
+        if (!opts.refuse && a.value.terminalId === 0) {
           const big = zstdCompressSync(Buffer.from("PS C:\\Users\\me> "));
           peer.send({ union: { case: "terminalResponse", value: { union: { case: "data", value: { terminalId: 0, data: new Uint8Array(big), compressed: true } } } } });
         }
       } else if (a.case === "data") {
         // echo
-        peer.send({ union: { case: "terminalResponse", value: { union: { case: "data", value: { terminalId: 0, data: a.value.data } } } } });
+        peer.send({ union: { case: "terminalResponse", value: { union: { case: "data", value: { terminalId: a.value.terminalId, data: a.value.data } } } } });
       } else if (a.case === "close") {
-        peer.send({ union: { case: "terminalResponse", value: { union: { case: "closed", value: { terminalId: 0, exitCode: 0 } } } } });
+        peer.send({ union: { case: "terminalResponse", value: { union: { case: "closed", value: { terminalId: a.value.terminalId, exitCode: 0 } } } } });
       }
     },
   });
@@ -85,5 +85,28 @@ describe("TerminalSession", () => {
     net.peer!.send({ union: { case: "terminalResponse", value: { union: { case: "closed", value: { terminalId: 0, exitCode: 3 } } } } });
     await vi.waitFor(() => expect(s.state).toBe("closed"));
     expect(exits).toEqual([3]);
+  });
+
+  it("opens more shells (tabs) on the same connection", async () => {
+    peerShell();
+    const s = new TerminalSession({ peerId: PEER_ID, server: serverConfig(), rememberedHash: sha256(PASSWORD, SALT) });
+    const out = new Map<number, string>();
+    s.on("data", ({ terminalId, data }) => out.set(terminalId, (out.get(terminalId) ?? "") + new TextDecoder().decode(data)));
+    await s.connect();
+    await s.openTerminal(1, 90, 20);
+    expect(s.terminals).toEqual([0, 1]);
+    expect(terminalActions().at(-1)).toMatchObject({ case: "open", value: { terminalId: 1, cols: 90, rows: 20 } });
+    s.write("one", 1);
+    s.write("zero");
+    await vi.waitFor(() => expect(out.get(1)).toBe("one"));
+    expect(out.get(0)).toContain("zero");
+    await expect(s.openTerminal(1, 80, 24)).rejects.toMatchObject({ code: "state" });
+
+    // closing a tab keeps the session; closing the last one ends it
+    s.closeTerminal(1);
+    await vi.waitFor(() => expect(s.terminals).toEqual([0]));
+    expect(s.state).toBe("connected");
+    s.closeTerminal(0);
+    await vi.waitFor(() => expect(s.state).toBe("closed"));
   });
 });
