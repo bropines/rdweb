@@ -97,11 +97,16 @@ export function applyUpdate(): void {
 // --- install ---
 
 interface BeforeInstallPromptEvent extends Event {
-  prompt(): Promise<void>;
+  prompt(): Promise<unknown>;
+  userChoice?: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
-/** How this browser installs the app: its own prompt, or instructions for Safari. */
-export type InstallKind = "prompt" | "ios" | "macos";
+/**
+ * "prompt": the browser's own install prompt is ready; "manual": only
+ * instructions (Safari, Firefox, or Chrome did not offer to install, e.g. when
+ * its WebAPK service is unreachable); "hidden": installed or running as an app.
+ */
+export type InstallState = "prompt" | "manual" | "hidden";
 
 const install = store();
 let deferred: BeforeInstallPromptEvent | null = null;
@@ -119,35 +124,30 @@ export function listenForInstall(): void {
     installed = true;
     install.emit();
   });
+  window.matchMedia?.("(display-mode: standalone)").addEventListener?.("change", install.emit);
 }
 
 function standalone(): boolean {
   return !!window.matchMedia?.("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
 }
 
-/** Safari has no install prompt; iOS/iPadOS and macOS Safari 17+ install from a menu. */
-function safariKind(): InstallKind | null {
-  const ua = navigator.userAgent;
-  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "ios";
-  const safari = /Macintosh/.test(ua) && !/Chrome|Chromium|Edg|Firefox|OPR/.test(ua) ? /Version\/(\d+)[\d.]* Safari\//.exec(ua) : null;
-  return safari && Number(safari[1]) >= 17 ? "macos" : null;
+function installState(): InstallState {
+  if (installed || standalone()) return "hidden";
+  return deferred ? "prompt" : "manual";
 }
 
-function installKind(): InstallKind | null {
-  if (installed || standalone()) return null;
-  return deferred ? "prompt" : safariKind();
+/** Whether to show the Install button, and whether the browser's own prompt is available. */
+export function useInstallState(): InstallState {
+  return useSyncExternalStore(install.subscribe, installState);
 }
 
-/** What the Install button does here, or null to hide it (installed, running as an app, unsupported). */
-export function useInstallKind(): InstallKind | null {
-  return useSyncExternalStore(install.subscribe, installKind);
-}
-
-/** Shows the browser's install prompt (kind "prompt"). */
-export async function promptInstall(): Promise<void> {
+/** Shows the browser's install prompt (state "prompt"); true if the user accepted. */
+export async function promptInstall(): Promise<boolean> {
   const e = deferred;
-  if (!e) return;
+  if (!e) return false;
   deferred = null; // one prompt per event; the browser fires a new one when it may ask again
   install.emit();
   await e.prompt();
+  const choice = await e.userChoice?.catch(() => null);
+  return choice?.outcome === "accepted";
 }

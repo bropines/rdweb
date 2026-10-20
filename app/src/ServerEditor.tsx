@@ -1,4 +1,4 @@
-import { Import, Info } from "lucide-react";
+import { Import, Info, Stethoscope } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@ui/button";
@@ -7,17 +7,20 @@ import { Input } from "@ui/input";
 import { Label } from "@ui/label";
 import { Textarea } from "@ui/misc";
 
+import type { CheckTarget } from "./CheckDialog";
 import { useAppI18n } from "./i18n";
-import { decodeConfigString, endpoints, entryFromConfig, hostOf, isIpHost, keyProblem, newServerId, type ServerEntry } from "./servers";
+import { decodeConfigString, endpoints, entryFromConfig, hostOf, isIpHost, keyProblem, newServerId, toServerConfig, type ServerEntry } from "./servers";
 
 interface Props {
   /** null: closed; {}: new server; an entry: edit it. */
   editing: Partial<ServerEntry> | null;
   onClose: () => void;
   onSave: (s: ServerEntry) => void;
+  /** Checks the values in the form (also before they are saved). */
+  onCheck: (target: CheckTarget) => void;
 }
 
-export function ServerEditor({ editing, onClose, onSave }: Props) {
+export function ServerEditor({ editing, onClose, onSave, onCheck }: Props) {
   const { t } = useAppI18n();
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
@@ -173,6 +176,21 @@ export function ServerEditor({ editing, onClose, onSave }: Props) {
           </div>
 
           <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="sm:mr-auto"
+              disabled={!addressOk}
+              onClick={() =>
+                onCheck({
+                  name: name.trim() || hostOf(address),
+                  server: toServerConfig({ id: "", name: "", address, relay: relay.trim() || undefined, key }),
+                })
+              }
+            >
+              <Stethoscope className="h-4 w-4" />
+              {t("editor.check")}
+            </Button>
             <Button type="button" variant="outline" onClick={onClose}>
               {t("editor.cancel")}
             </Button>

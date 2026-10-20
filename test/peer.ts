@@ -1,11 +1,13 @@
 // In-memory hbbs/hbbr/peer for protocol tests: answers the rendezvous,
 // authenticates like a real peer (signed keys, sealed session key, salted
 // password challenge) and then hands every decrypted message to a handler.
+// hbbs can also send its signed KeyExchange on connect and answer
+// OnlineRequest, and endpoints can be made unreachable or stall (server check).
 
 import nacl from "tweetnacl";
 import { create, fromBinary, toBinary, type MessageInitShape } from "@bufbuild/protobuf";
 import { createHash } from "node:crypto";
-import { RendezvousMessageSchema, type PunchHoleRequest, type RequestRelay } from "../src/proto/rendezvous_pb.js";
+import { RendezvousMessageSchema, type OnlineRequest, type PunchHoleRequest, type RequestRelay } from "../src/proto/rendezvous_pb.js";
 import {
   IdPkSchema,
   MessageSchema,
@@ -34,6 +36,17 @@ export interface PeerConfig {
   afterLogin?: (peer: FakePeer) => void;
   /** Every message after login. */
   onMessage?: (m: Message, peer: FakePeer) => void;
+  /**
+   * hbbs sends a KeyExchange as its first frame (as on TCP; real hbbs does not
+   * on WebSocket), its key signed with the server key or with another key.
+   */
+  keyExchange?: "valid" | "wrong-key";
+  /** Device ids hbbs reports online in an OnlineResponse. */
+  online?: string[];
+  /** URLs (substrings) whose WebSocket fails to connect. */
+  unreachable?: string[];
+  /** URLs (substrings) whose WebSocket never opens. */
+  stalled?: string[];
 }
 
 export function sha256(...parts: (Uint8Array | string)[]): Uint8Array {
@@ -52,6 +65,9 @@ export class FakeNet {
   punchRequests: PunchHoleRequest[] = [];
   relayRequests: RequestRelay[] = [];
   loginRequests: LoginRequest[] = [];
+  onlineRequests: OnlineRequest[] = [];
+  /** URL of every WebSocket the client opened. */
+  opened: string[] = [];
   /** Every message the client sent after the key exchange. */
   log: Message[] = [];
   peer: FakePeer | null = null;
@@ -86,10 +102,29 @@ export class FakeSocket {
   private loggedIn = false;
 
   constructor(readonly url: string) {
+    net.opened.push(url);
+    const matches = (list?: string[]) => !!list?.some((u) => url.includes(u));
+    if (matches(net.config.stalled)) return;
+    if (matches(net.config.unreachable)) {
+      queueMicrotask(() => {
+        this.readyState = 3;
+        this.onerror?.();
+        this.onclose?.({ code: 1006, reason: "", wasClean: false });
+      });
+      return;
+    }
     queueMicrotask(() => {
       this.readyState = 1;
       this.onopen?.();
+      if (this.url.includes("/ws/id") && net.config.keyExchange) this.sendKeyExchange(net.config.keyExchange === "valid");
     });
+  }
+
+  /** hbbs' KeyExchange: keys[0] = its X25519 key signed with the server key. */
+  private sendKeyExchange(valid: boolean): void {
+    const signer = valid ? serverSign.secretKey : nacl.sign.keyPair().secretKey;
+    const signed = nacl.sign(nacl.box.keyPair().publicKey, signer);
+    this.deliver(toBinary(RendezvousMessageSchema, create(RendezvousMessageSchema, { union: { case: "keyExchange", value: { keys: [signed] } } })));
   }
 
   close(): void {
@@ -135,6 +170,7 @@ export class FakeSocket {
 
   private onRendezvous(data: Uint8Array): void {
     const msg = fromBinary(RendezvousMessageSchema, data);
+    if (msg.union.case === "onlineRequest") return this.onOnlineRequest(msg.union.value);
     if (msg.union.case !== "punchHoleRequest") return;
     net.punchRequests.push(msg.union.value);
     const pk = signedIdPk(msg.union.value.id, peerSign.publicKey, serverSign.secretKey);
@@ -149,6 +185,17 @@ export class FakeSocket {
         }),
       ),
     );
+  }
+
+  /** A bitmap, MSB first; hbbs closes a stream connection after answering. */
+  private onOnlineRequest(req: OnlineRequest): void {
+    net.onlineRequests.push(req);
+    const states = new Uint8Array(Math.ceil(req.peers.length / 8));
+    req.peers.forEach((id, i) => {
+      if (net.config.online?.includes(id)) states[i >> 3]! |= 0x80 >> (i & 7);
+    });
+    this.deliver(toBinary(RendezvousMessageSchema, create(RendezvousMessageSchema, { union: { case: "onlineResponse", value: { states } } })));
+    queueMicrotask(() => this.drop("")); // after the answer was delivered
   }
 
   private onRelay(data: Uint8Array): void {

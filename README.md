@@ -52,6 +52,9 @@ web client, and the [standalone web client](#standalone-web-client) at
   through the file manager; pasted text goes to the remote clipboard, then the
   remote side's own paste shortcut is pressed (Ctrl+V, or Cmd+V on macOS peers),
   so Cmd+V from a Mac pastes on Windows too (`Session.pasteShortcut`).
+- Server check (`checkServer`): is the ID server reachable over WebSocket, does
+  it vouch for the configured key, is the relay reachable, is a device online —
+  without contacting any device.
 - Two-pane file manager in Chromium browsers (File System Access API): a
   "Local folder" pane next to the remote list copies files and folders both
   ways, by buttons or by dragging rows between the panes, and asks before
@@ -145,6 +148,38 @@ relay is reached next to hbbs (`relayUrlNextTo`: `wss://host/ws/id` →
 native clients; pass `relayUrl` to override, e.g. `relayUrl: announcedRelayUrl`
 to map an announced `host:21117` to `wss://host/ws/relay`. A failed WebSocket
 connection to either server is a `SessionError` with code `unreachable`.
+
+### Checking a server
+
+```ts
+import { checkServer } from "rdweb";
+
+const check = await checkServer(server, { peerId: "123456789", timeoutMs: 8000, signal });
+for (const step of check.steps) console.log(step.id, step.status, step.ms, step.code, step.detail);
+// rendezvous ok 41 / key skip / relay ok 38 / device fail offline
+```
+
+`checkServer(server, { peerId?, timeoutMs?, keyWaitMs?, signal? })` resolves
+with `{ ok, steps, rendezvousUrl, relayUrl }`; `ok` is true when no step
+failed. Steps, in this order, each `{ id, status: "ok" | "fail" | "skip", ms?,
+detail?, code? }`:
+
+- `rendezvous`: opens the hbbs WebSocket (`rendezvousUrl`) and times it.
+- `key`: hbbs signs its X25519 key with the server's Ed25519 key and sends it
+  unsolicited as a `KeyExchange`; the signature is verified with `server.key`
+  (`key-mismatch` if it does not verify). hbbs sends it on TCP connections
+  only, not over WebSocket, so against current hbbs this step is `skip` (a
+  wrong key then shows up as `key-mismatch` when connecting to a device).
+- `relay`: opens the hbbr WebSocket (`relayUrl("")`, or `relayUrlNextTo`) and
+  closes it without a request.
+- `device` (with `peerId`): an `OnlineRequest`, answered by hbbs from its
+  registration table; `fail` with code `offline` when hbbs does not list the
+  device as online.
+
+Failure codes: `unreachable` (the WebSocket could not be opened: DNS, TLS
+certificate, proxy), `timeout`, `key-mismatch`, `bad-config` (malformed URL or
+key), `offline`. The check never sends a punch-hole or relay request, so no
+device is contacted or notified. It rejects only when `signal` aborts.
 
 Browser support: Chromium-based browsers and Safari 17+ (WebCodecs). Firefox
 130+ decodes VP8/VP9/AV1. H.265 depends on platform decoders.
@@ -265,12 +300,26 @@ repository (`app/`): add a server, enter a device id, connect.
   inside the encrypted session; "remember password" keeps a salted hash, not
   the password, in this browser. Servers and settings stay in localStorage.
 
-- **Install and offline**: the page is an installable web app (the header's
-  Install button in Chromium browsers; Share → Add to Home Screen on iOS and
-  iPadOS; File → Add to Dock in Safari 17+ on macOS). A service worker keeps
-  the app itself, so it opens without a connection to GitHub Pages; reaching
-  devices still needs your server. A new deploy shows a "Reload" prompt.
-  Icons come from `app/public/favicon.svg` (`node scripts/gen-app-icons.mjs`).
+- **Check**: the stethoscope button on a saved server (and "Check" in the
+  server editor, for values not saved yet) runs `checkServer`, optionally with
+  a device id, and shows each step with its time and a hint for what to fix
+  (the ID server's domain must serve `/ws/id` over HTTPS with a valid
+  certificate; copy `id_ed25519.pub` for a key mismatch; `/ws/relay` must reach
+  hbbr 21119; the device must be online and registered).
+- **Install and offline**: the page is an installable web app. The header's
+  Install button shows whenever the page does not run as an app: it offers the
+  browser's own prompt when there is one and always lists the steps for the
+  detected browser (Chrome or another browser on Android, iOS/iPadOS, Safari
+  17+ on macOS, Chrome/Edge on a computer, Firefox) plus the others, with an
+  Android troubleshooting list for failed WebAPK installs (VPN, clearing site
+  data, Xiaomi/HyperOS install permissions, another browser, "Create
+  shortcut"). A service worker keeps the app itself, so it opens without a
+  connection to GitHub Pages; reaching devices still needs your server. A new
+  deploy shows a "Reload" prompt. Icons come from `app/public/favicon.svg`
+  (`node scripts/gen-app-icons.mjs`).
+- **Official apps**: About and the install dialog link the official RustDesk
+  client (GitHub releases, Google Play, F-Droid, App Store), which connects
+  directly (P2P) and has more features; rdweb is an independent client.
 
 English and Russian, light/dark/system theme, phone layouts. The
 [pages workflow](.github/workflows/pages.yml) deploys it on every push to

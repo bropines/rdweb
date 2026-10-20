@@ -1,4 +1,4 @@
-import { Download, FolderOpen, Info, Languages, Monitor, Moon, Pencil, Plus, Server, Sun, SquareTerminal, Trash2 } from "lucide-react";
+import { Download, FolderOpen, Info, Languages, Monitor, Moon, Pencil, Plus, Server, Stethoscope, Sun, SquareTerminal, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { clearStoredData, RemoteDesktop, Toaster, type Lang } from "rdweb/react";
@@ -10,8 +10,11 @@ import { Label } from "@ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ui/select";
 
 import { BUILD, COMMIT_URL, SHORT_COMMIT } from "./build";
+import { CheckDialog, type CheckTarget } from "./CheckDialog";
 import { AppI18n, appTranslator, initialLang, storeLang, useAppI18n } from "./i18n";
-import { applyUpdate, promptInstall, useInstallKind, useUpdateReady } from "./pwa";
+import { InstallDialog } from "./InstallDialog";
+import { OfficialApps } from "./OfficialApps";
+import { applyUpdate, useInstallState, useUpdateReady } from "./pwa";
 import { ServerEditor } from "./ServerEditor";
 import {
   clearAppData,
@@ -155,8 +158,9 @@ function Home(p: HomeProps) {
   const [editing, setEditing] = useState<Partial<ServerEntry> | null>(null);
   const [deleting, setDeleting] = useState<ServerEntry | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
-  const installKind = useInstallKind();
-  const [installHelp, setInstallHelp] = useState(false);
+  const installState = useInstallState();
+  const [installOpen, setInstallOpen] = useState(false);
+  const [checking, setChecking] = useState<CheckTarget | null>(null);
   const [serverId, setServerId] = useState<string>(() => {
     const last = readLastServer();
     return p.servers.find((s) => s.id === last)?.id ?? p.servers[0]?.id ?? "";
@@ -214,14 +218,8 @@ function Home(p: HomeProps) {
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
-          {installKind && (
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label={t("install.button")}
-              title={t("install.button")}
-              onClick={() => (installKind === "prompt" ? void promptInstall().catch(() => {}) : setInstallHelp(true))}
-            >
+          {installState !== "hidden" && (
+            <Button variant="ghost" size="sm" aria-label={t("install.button")} title={t("install.button")} onClick={() => setInstallOpen(true)}>
               <Download className="h-4 w-4" />
               <span className="hidden sm:inline">{t("install.button")}</span>
             </Button>
@@ -347,6 +345,16 @@ function Home(p: HomeProps) {
                       {t("servers.key")}: {shortKey(s.key)}
                     </div>
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    aria-label={t("servers.check")}
+                    title={t("servers.check")}
+                    onClick={() => setChecking({ name: s.name, server: toServerConfig(s) })}
+                  >
+                    <Stethoscope className="h-4 w-4" />
+                  </Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t("servers.edit")} title={t("servers.edit")} onClick={() => setEditing(s)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
@@ -377,7 +385,10 @@ function Home(p: HomeProps) {
           setServerId(s.id);
           setEditing(null);
         }}
+        onCheck={setChecking}
       />
+
+      <CheckDialog target={checking} onClose={() => setChecking(null)} />
 
       <Dialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
         <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md" closeLabel={t("about.close")}>
@@ -402,18 +413,7 @@ function Home(p: HomeProps) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={installHelp} onOpenChange={setInstallHelp}>
-        <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md" closeLabel={t("about.close")}>
-          <DialogHeader>
-            <DialogTitle>{t("install.title")}</DialogTitle>
-            <DialogDescription>{t(installKind === "macos" ? "install.macos" : "install.ios")}</DialogDescription>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">{t("install.hint")}</p>
-          <DialogFooter>
-            <Button onClick={() => setInstallHelp(false)}>{t("about.close")}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <InstallDialog open={installOpen} onOpenChange={setInstallOpen} />
 
       <About
         open={aboutOpen}
@@ -454,6 +454,7 @@ function About({ open, onOpenChange, onClear }: { open: boolean; onOpenChange: (
           <h3 className="pt-2 font-medium">{t("editor.requirementsTitle")}</h3>
           <p className="text-muted-foreground">{t("editor.requirements")}</p>
           <p className="pt-2 text-muted-foreground">{t("about.install")}</p>
+          <OfficialApps className="pt-2" />
           <p className="pt-2">
             <a className="text-primary underline-offset-4 hover:underline" href={SOURCE_URL} target="_blank" rel="noreferrer noopener">
               {t("about.source")}: github.com/bropines/rdweb
