@@ -41,7 +41,10 @@ web client, and the [standalone web client](#standalone-web-client) at
   bounded memory (zstd blocks are inflated with a hard cap, unread data is
   limited) and WebSocket backpressure on uploads.
 - Terminal (`TerminalSession`, RustDesk 1.4.1+ peers): remote shells in tabs
-  over one connection (`openTerminal`, `closeTerminal`) (PowerShell/cmd on Windows, the user's shell elsewhere), with
+  over one connection (`openTerminal`, `closeTerminal`); with `persistent` the
+  device keeps them when the connection drops and a session with the same
+  `serviceId` gets them back with their recent output (the React terminal
+  reconnects on its own and after a page reload) (PowerShell/cmd on Windows, the user's shell elsewhere), with
   resize and zstd-compressed output. The React terminal has its own settings
   (font installed on the computer, size) and shows prompt icons (oh-my-posh,
   starship) through a built-in Symbols Nerd Font loaded on demand.

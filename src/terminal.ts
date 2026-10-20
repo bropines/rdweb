@@ -8,7 +8,7 @@ import { parseServerKey } from "./crypto.js";
 import { Emitter } from "./emitter.js";
 import { peerOsFromPlatform, type PeerOs } from "./keymap.js";
 import { ConnType } from "./proto/rendezvous_pb.js";
-import type { Message, PeerInfo, TerminalResponse } from "./proto/session_pb.js";
+import { OptionMessage_BoolOption, type Message, type PeerInfo, type TerminalResponse } from "./proto/session_pb.js";
 import type { CloseInfo, ServerConfig, SessionState } from "./types.js";
 import { inflateCapped } from "./zstd.js";
 
@@ -27,6 +27,14 @@ export interface TerminalOptions {
   /** Initial size in character cells (default 80x24). */
   cols?: number;
   rows?: number;
+  /**
+   * Ask the device to keep the shells running when the connection drops, so
+   * a later session with the same `serviceId` gets them back (with their
+   * recent output). close() still ends them.
+   */
+  persistent?: boolean;
+  /** The `serviceId` of an earlier session to reattach to its shells. */
+  serviceId?: string;
 }
 
 export interface TerminalPeer {
@@ -44,8 +52,12 @@ export interface TerminalEventMap {
   twoFactor: { wrong: boolean };
   waitingForApproval: Record<string, never>;
   connected: { peer: TerminalPeer; rememberedHash: Uint8Array | null };
-  /** Output of a shell (UTF-8 bytes, may split characters). */
-  data: { terminalId: number; data: Uint8Array };
+  /**
+   * Output of a shell (UTF-8 bytes, may split characters). replay: the
+   * device's buffered output of a reattached shell; terminal emulators should
+   * not answer queries found in it.
+   */
+  data: { terminalId: number; data: Uint8Array; replay: boolean };
   /** A shell exited; the session closes when the last one did. */
   exit: { terminalId: number; code: number };
   close: CloseInfo;
@@ -62,6 +74,9 @@ export class TerminalSession {
   private readonly sizes = new Map<number, { cols: number; rows: number }>();
   private readonly opening = new Map<number, { resolve: () => void; reject: (e: Error) => void }>();
   private readonly open = new Set<number>();
+  private readonly replayNext = new Set<number>();
+  private service = "";
+  private others: number[] = [];
 
   constructor(opts: TerminalOptions) {
     this.peerId = opts.peerId.replace(/\s+/g, "");
@@ -77,7 +92,10 @@ export class TerminalSession {
         myName: opts.myName,
         myId: opts.myId,
         clientVersion: opts.clientVersion,
-        loginExtras: () => ({ union: { case: "terminal", value: { serviceId: "" } } }),
+        loginExtras: () => ({
+          option: opts.persistent ? { terminalPersistent: OptionMessage_BoolOption.Yes } : undefined,
+          union: { case: "terminal", value: { serviceId: opts.serviceId ?? "" } },
+        }),
         loginErrorCode: (e) => (/no permission|not allowed|disabled/i.test(e) ? "permission-denied" : "login"),
       },
       {
@@ -130,6 +148,19 @@ export class TerminalSession {
     if (this.open.has(terminalId) || this.opening.has(terminalId)) throw new SessionError(`terminal ${terminalId} is already open`, "state");
     this.sizes.set(terminalId, { cols, rows });
     await this.request(terminalId, cols, rows);
+  }
+
+  /** The device's id of this set of shells; pass it as `serviceId` to reattach later. */
+  get serviceId(): string {
+    return this.service;
+  }
+
+  /**
+   * Shells of a reattached service besides terminal 0 (known after connect()):
+   * open them with openTerminal() to get them back.
+   */
+  get restorable(): number[] {
+    return this.others;
   }
 
   /** Ids of the open shells. */
@@ -196,11 +227,15 @@ export class TerminalSession {
     this.link.send({ union: { case: "terminalAction", value: { union: { case: "close", value: { terminalId } } } } });
   }
 
-  close(reason = "closed by user"): void {
+  /**
+   * Ends the session. The shells end too unless keepShells is set, which
+   * leaves a persistent service's shells running for a later reattach.
+   */
+  close(reason = "closed by user", opts: { keepShells?: boolean } = {}): void {
     if (this.stateValue === "closed") return;
     if (this.link.isOpen) {
       try {
-        for (const terminalId of this.open) {
+        for (const terminalId of opts.keepShells ? [] : this.open) {
           this.link.send({ union: { case: "terminalAction", value: { union: { case: "close", value: { terminalId } } } } });
         }
         this.link.send({ union: { case: "misc", value: { union: { case: "closeReason", value: reason } } } });
@@ -243,6 +278,9 @@ export class TerminalSession {
       case "opened": {
         const o = this.opening.get(u.value.terminalId);
         this.opening.delete(u.value.terminalId);
+        if (u.value.serviceId) this.service = u.value.serviceId;
+        if (u.value.persistentSessions.length) this.others = [...u.value.persistentSessions].sort((a, b) => a - b);
+        if (u.value.success && u.value.replayTerminalOutput) this.replayNext.add(u.value.terminalId);
         if (u.value.success) o?.resolve();
         else o?.reject(new SessionError(u.value.message || "the device could not open a terminal", "refused"));
         return;
@@ -256,7 +294,8 @@ export class TerminalSession {
             return;
           }
         }
-        if (data.length) this.events.emit("data", { terminalId: u.value.terminalId, data });
+        const replay = this.replayNext.delete(u.value.terminalId);
+        if (data.length) this.events.emit("data", { terminalId: u.value.terminalId, data, replay });
         return;
       }
       case "closed": {
@@ -272,7 +311,7 @@ export class TerminalSession {
           this.opening.delete(u.value.terminalId);
           o.reject(new SessionError(u.value.message, "refused"));
         } else {
-          this.events.emit("data", { terminalId: u.value.terminalId, data: new TextEncoder().encode(`\r\n[${u.value.message}]\r\n`) });
+          this.events.emit("data", { terminalId: u.value.terminalId, data: new TextEncoder().encode(`\r\n[${u.value.message}]\r\n`), replay: false });
         }
         return;
       }

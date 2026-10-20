@@ -38,9 +38,11 @@ export interface TerminalPrefs {
   fontSize: number;
   /** Built-in Symbols Nerd Font as fallback for prompt icons. */
   nerdSymbols: boolean;
+  /** Keep the shells running on the device when the connection drops, and reattach. */
+  persistent: boolean;
 }
 
-const DEFAULT_TERMINAL_PREFS: TerminalPrefs = { fontFamily: "", fontSize: 14, nerdSymbols: true };
+const DEFAULT_TERMINAL_PREFS: TerminalPrefs = { fontFamily: "", fontSize: 14, nerdSymbols: true, persistent: true };
 
 function loadTerminalPrefs(storageKey: string): TerminalPrefs {
   try {
@@ -50,6 +52,7 @@ function loadTerminalPrefs(storageKey: string): TerminalPrefs {
       fontFamily: typeof v.fontFamily === "string" ? v.fontFamily.slice(0, 100) : "",
       fontSize: typeof v.fontSize === "number" && v.fontSize >= 8 && v.fontSize <= 32 ? v.fontSize : 14,
       nerdSymbols: v.nerdSymbols !== false,
+      persistent: v.persistent !== false,
     };
   } catch {
     return { ...DEFAULT_TERMINAL_PREFS };
@@ -59,6 +62,28 @@ function loadTerminalPrefs(storageKey: string): TerminalPrefs {
 function saveTerminalPrefs(storageKey: string, p: TerminalPrefs): void {
   try {
     localStorage.setItem(`${storageKey}.terminal`, JSON.stringify(p));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** The device's service id of this browser tab's shells (sessionStorage: survives reloads, not other tabs). */
+function serviceKey(storageKey: string, serverKey: string, peerId: string): string {
+  return `${storageKey}.terminal.service.${serverKey.trim()}.${peerId}`;
+}
+
+function loadService(key: string): string | undefined {
+  try {
+    return sessionStorage.getItem(key) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function storeService(key: string, id: string | null): void {
+  try {
+    if (id) sessionStorage.setItem(key, id);
+    else sessionStorage.removeItem(key);
   } catch {
     /* storage unavailable */
   }
@@ -107,6 +132,8 @@ type XtermLib = {
 interface Pane {
   term: import("@xterm/xterm").Terminal;
   fit: { fit(): void };
+  /** While replayed output is parsed: xterm's answers to queries in it are not sent. */
+  replaying: boolean;
 }
 
 interface Tab {
@@ -124,6 +151,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const hosts = useRef(new Map<number, HTMLDivElement>());
   const areaRef = useRef<HTMLDivElement>(null);
   const nextId = useRef(1);
+  const leavingRef = useRef(false);
+  const svcKey = serviceKey(storageKey, props.server.key, props.peerId);
   const [conn, setConn] = useState<ConnState>("connecting");
   const [error, setError] = useState("");
   const [wrong, setWrong] = useState(false);
@@ -134,6 +163,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const prefsRef = useRef(prefs);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [scrolledUp, setScrolledUp] = useState(false);
+  const [autoRetry, setAutoRetry] = useState(false);
   const [tabs, setTabs] = useState<Tab[]>([{ id: 0, exited: false }]);
   const [active, setActive] = useState(0);
   const activeRef = useRef(0);
@@ -170,10 +200,13 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       theme: { background: "#0a0a0a" },
     });
     const fit = new lib.FitAddon();
+    const pane: Pane = { term, fit, replaying: false };
     term.loadAddon(fit);
     term.open(el);
     fit.fit();
-    term.onData((d) => sessRef.current?.write(d, id));
+    term.onData((d) => {
+      if (!pane.replaying) sessRef.current?.write(d, id);
+    });
     // Shift+PageUp/PageDown/Home/End page through the scrollback (like most terminals)
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown" || !e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return true;
@@ -190,7 +223,6 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     });
     term.onScroll(() => updateScrolled(id));
     term.onWriteParsed(() => updateScrolled(id));
-    const pane = { term, fit };
     panes.current.set(id, pane);
     return pane;
   };
@@ -216,6 +248,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         myId: props.myId || undefined,
         cols: first.term.cols,
         rows: first.term.rows,
+        persistent: prefsRef.current.persistent,
+        serviceId: prefsRef.current.persistent ? loadService(svcKey) : undefined,
       });
       sessRef.current = s;
       let hostPasswordTried = !props.credentials?.password;
@@ -233,14 +267,29 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         setConn("twoFactor");
       });
       s.on("waitingForApproval", () => setConn("waiting"));
-      s.on("data", ({ terminalId, data }) => panes.current.get(terminalId)?.term.write(data));
+      s.on("data", ({ terminalId, data, replay }) => {
+        const p = panes.current.get(terminalId);
+        if (!p) return;
+        if (!replay) {
+          p.term.write(data);
+          return;
+        }
+        p.replaying = true;
+        p.term.write(data, () => {
+          p.replaying = false;
+        });
+      });
       s.on("exit", ({ terminalId, code }) => {
         panes.current.get(terminalId)?.term.write(`\r\n[${t("terminal.exited", { code })}]\r\n`);
         setTabs((list) => list.map((x) => (x.id === terminalId ? { ...x, exited: true } : x)));
       });
       s.on("close", (info) => {
         // before the shell opened, connect() rejects and shows the error instead
-        if (!disposed && opened) setEnded(info.reason);
+        if (disposed || !opened) return;
+        setEnded(info.reason);
+        // a dropped connection: the device keeps the shells, get them back
+        if (prefsRef.current.persistent && info.retryable && !info.remote) setAutoRetry(true);
+        else storeService(svcKey, null);
       });
       ro = new ResizeObserver(fitActive);
       if (areaRef.current) ro.observe(areaRef.current);
@@ -249,6 +298,13 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       if (disposed) return;
       const p = s.peer;
       if (p) setTitle(p.hostname ? `${p.hostname} · ${props.peerId}` : props.peerId);
+      if (prefsRef.current.persistent && s.serviceId) storeService(svcKey, s.serviceId);
+      // a reattached service: its other shells come back as tabs
+      const restore = s.restorable;
+      if (restore.length) {
+        nextId.current = Math.max(...restore) + 1;
+        setTabs([{ id: 0, exited: false }, ...restore.map((id) => ({ id, exited: false }))]);
+      }
       setConn("ready");
       first.term.focus();
     })().catch((e: Error & { code?: string }) => {
@@ -259,7 +315,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     return () => {
       disposed = true;
       ro?.disconnect();
-      sessRef.current?.close("closed");
+      // leaving ends the shells; a remount (reconnect) keeps a persistent service's shells
+      sessRef.current?.close("closed", { keepShells: prefsRef.current.persistent && !leavingRef.current });
       sessRef.current = null;
       for (const p of panes.current.values()) p.term.dispose();
       panes.current.clear();
@@ -290,6 +347,20 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     updateScrolled(active);
   }, [active]);
 
+  // Reconnect on our own after a drop (the device kept the shells).
+  useEffect(() => {
+    if (!autoRetry) return;
+    const timer = setTimeout(props.onReconnect, 2000);
+    return () => clearTimeout(timer);
+  }, [autoRetry, props.onReconnect]);
+
+  /** Back: end the shells (not kept for a reattach). */
+  const leave = () => {
+    leavingRef.current = true;
+    storeService(svcKey, null);
+    props.onLeave();
+  };
+
   const addTab = () => {
     if (conn !== "ready" || tabs.length >= MAX_TABS) return;
     const id = nextId.current++;
@@ -300,7 +371,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const closeTab = (id: number) => {
     const rest = tabs.filter((x) => x.id !== id);
     if (rest.length === 0) {
-      props.onLeave();
+      leave();
       return;
     }
     sessRef.current?.closeTerminal(id);
@@ -328,7 +399,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   return (
     <div className={cn(SCOPE, "fixed inset-0 flex flex-col bg-[#0a0a0a] text-white", props.className)}>
       <div className="flex shrink-0 items-center gap-2 border-b border-white/10 px-2 py-2">
-        <Button size="icon" variant="ghost" className="text-white hover:bg-white/10 hover:text-white" aria-label={t("toolbar.back")} title={t("toolbar.back")} onClick={props.onLeave}>
+        <Button size="icon" variant="ghost" className="text-white hover:bg-white/10 hover:text-white" aria-label={t("toolbar.back")} title={t("toolbar.back")} onClick={leave}>
           <ChevronLeft className="h-5 w-5" />
         </Button>
         <div className="min-w-0 flex-1 truncate text-sm font-medium">
@@ -409,12 +480,13 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
               {ended ? (
                 <div className="space-y-3 p-6 text-center">
                   <p className="text-sm">{t("terminal.ended", { reason: ended })}</p>
+                  {autoRetry && <p className="text-xs text-muted-foreground">{t("terminal.reconnecting")}</p>}
                   <div className="flex justify-center gap-2">
                     <Button size="sm" onClick={props.onReconnect}>
                       <RefreshCw className="mr-2 h-4 w-4" />
                       {t("reconnect")}
                     </Button>
-                    <Button size="sm" variant="secondary" onClick={props.onLeave}>
+                    <Button size="sm" variant="secondary" onClick={leave}>
                       {t("common.back")}
                     </Button>
                   </div>
@@ -524,6 +596,13 @@ function TerminalSettings({
             <span>
               {t("terminal.nerdSymbols")}
               <span className="block text-xs text-muted-foreground">{t("terminal.nerdSymbolsHint")}</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox checked={draft.persistent} onCheckedChange={(v) => setDraft({ ...draft, persistent: v === true })} className="mt-0.5" />
+            <span>
+              {t("terminal.persistent")}
+              <span className="block text-xs text-muted-foreground">{t("terminal.persistentHint")}</span>
             </span>
           </label>
           <DialogFooter className="gap-2">
