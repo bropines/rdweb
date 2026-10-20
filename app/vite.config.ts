@@ -71,8 +71,8 @@ export default defineConfig({
         manualChunks(id) {
           if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return "react";
           if (/[\\/]node_modules[\\/](@bufbuild|tweetnacl|fzstd)[\\/]/.test(id)) return "protocol";
-          // the Opus fallback decoder (WebAssembly) stays a lazily loaded chunk
-          if (/[\\/]node_modules[\\/](opus-decoder|@wasm-audio-decoders)[\\/]/.test(id)) return undefined;
+          // the Opus fallback decoder (WebAssembly) and xterm.js stay lazily loaded chunks
+          if (/[\\/]node_modules[\\/](opus-decoder|@wasm-audio-decoders|@xterm)[\\/]/.test(id)) return undefined;
           if (id.includes("node_modules")) return "ui";
           return undefined;
         },

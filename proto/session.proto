@@ -36,6 +36,11 @@ message OSLogin {
 
 // Asks for a file transfer session; `dir` is the folder to list first (empty:
 // the remote user's home).
+// Terminal session (RustDesk 1.4.1+); service_id reattaches to a kept shell.
+message Terminal {
+  string service_id = 1;
+}
+
 message FileTransfer {
   string dir = 1;
   bool show_hidden = 2;
@@ -50,6 +55,7 @@ message LoginRequest {
   // Which kind of session is wanted; unset means remote desktop.
   oneof union {
     FileTransfer file_transfer = 7;
+    Terminal terminal = 16;
   }
   bool video_ack_required = 9;
   uint64 session_id = 10;
@@ -742,5 +748,70 @@ message Message {
     PointerDeviceEvent pointer_device_event = 26;
     Auth2FA auth_2fa = 27;
     MultiClipboards multi_clipboards = 28;
+    TerminalAction terminal_action = 31;
+    TerminalResponse terminal_response = 32;
+  }
+}
+
+// ---- terminal (ConnType TERMINAL) ----
+
+message OpenTerminal {
+  int32 terminal_id = 1;
+  uint32 rows = 2;
+  uint32 cols = 3;
+}
+
+message ResizeTerminal {
+  int32 terminal_id = 1;
+  uint32 rows = 2;
+  uint32 cols = 3;
+}
+
+// data is zstd-compressed when compressed is set (large output from the peer).
+message TerminalData {
+  int32 terminal_id = 1;
+  bytes data = 2;
+  bool compressed = 3;
+}
+
+message CloseTerminal {
+  int32 terminal_id = 1;
+}
+
+message TerminalAction {
+  oneof union {
+    OpenTerminal open = 1;
+    TerminalData data = 2;
+    ResizeTerminal resize = 3;
+    CloseTerminal close = 4;
+  }
+}
+
+message TerminalOpened {
+  int32 terminal_id = 1;
+  bool success = 2;
+  string message = 3;
+  uint32 pid = 4;
+  string service_id = 5;
+  repeated int32 persistent_sessions = 6;
+  bool replay_terminal_output = 7;
+}
+
+message TerminalClosed {
+  int32 terminal_id = 1;
+  int32 exit_code = 2;
+}
+
+message TerminalError {
+  int32 terminal_id = 1;
+  string message = 2;
+}
+
+message TerminalResponse {
+  oneof union {
+    TerminalOpened opened = 1;
+    TerminalData data = 2;
+    TerminalClosed closed = 3;
+    TerminalError error = 4;
   }
 }

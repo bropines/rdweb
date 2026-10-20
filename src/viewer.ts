@@ -31,6 +31,11 @@ export interface ViewerEventMap {
   clipboardBlocked: { text: string };
   /** Keyboard capture state (focus) changed. */
   focus: { focused: boolean };
+  /**
+   * Files were pasted (Ctrl/Cmd+V) or dropped onto the screen; the host can
+   * upload them. Handle a drop synchronously: its DataTransfer expires after the event.
+   */
+  files: { dataTransfer: DataTransfer };
 }
 
 const BUTTONS: Record<number, MouseButtonName> = { 0: "left", 1: "middle", 2: "right", 3: "back", 4: "forward" };
@@ -513,6 +518,14 @@ export class Viewer {
     add(c, "wheel", (e) => this.onWheel(e), opts);
     add(c, "contextmenu", (e) => e.preventDefault(), opts);
     add(c, "dragstart", (e) => e.preventDefault(), opts);
+    add(c, "dragover", (e) => {
+      if ([...(e.dataTransfer?.types ?? [])].includes("Files")) e.preventDefault();
+    });
+    add(c, "drop", (e) => {
+      if (!e.dataTransfer?.files.length) return;
+      e.preventDefault();
+      this.emit("files", { dataTransfer: e.dataTransfer });
+    });
 
     for (const el of [this.root, this.ime]) {
       add(el, "keydown", (e) => this.onKey(e, true), opts);
@@ -902,6 +915,16 @@ export class Viewer {
 
   private onPaste(e: ClipboardEvent): void {
     e.preventDefault();
+    if (e.clipboardData?.files.length) {
+      // files: offered for upload instead of pressing Ctrl+V remotely
+      if (this.pasteTimer) {
+        clearTimeout(this.pasteTimer);
+        this.pasteTimer = null;
+      }
+      this.emit("files", { dataTransfer: e.clipboardData });
+      this.ime.value = "";
+      return;
+    }
     const text = e.clipboardData?.getData("text/plain") ?? "";
     if (text) this.session.sendClipboard(text);
     if (this.pasteTimer) {

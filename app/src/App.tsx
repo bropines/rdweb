@@ -1,4 +1,4 @@
-import { Info, Languages, Monitor, Moon, Pencil, Plus, Server, Sun, Trash2 } from "lucide-react";
+import { FolderOpen, Info, Languages, Monitor, Moon, Pencil, Plus, Server, Sun, SquareTerminal, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { clearStoredData, RemoteDesktop, Toaster, type Lang } from "rdweb/react";
@@ -29,9 +29,12 @@ import { useTheme, type ThemeChoice } from "./theme";
 const SOURCE_URL = "https://github.com/bropines/rdweb";
 const LAST_SERVER_KEY = "rdweb.app.lastServer";
 
+type Mode = "desktop" | "files" | "terminal";
+
 interface Active {
   server: ServerEntry;
   peerId: string;
+  mode: Mode;
 }
 
 function readLastServer(): string | null {
@@ -71,7 +74,7 @@ export function App() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const start = (server: ServerEntry, peerId: string) => {
+  const start = (server: ServerEntry, peerId: string, mode: Mode = "desktop") => {
     try {
       localStorage.setItem(LAST_SERVER_KEY, server.id);
     } catch {
@@ -79,7 +82,7 @@ export function App() {
     }
     window.history.pushState({ rdwebSession: true }, "");
     setLastPeer(peerId);
-    setActive({ server, peerId });
+    setActive({ server, peerId, mode });
   };
   const leave = useCallback(() => {
     if ((window.history.state as { rdwebSession?: boolean } | null)?.rdwebSession) window.history.back();
@@ -119,6 +122,7 @@ function Session({ active, lang, onLeave, onRecent }: { active: Active; lang: La
       server={server}
       lang={lang}
       messages={messages}
+      mode={active.mode}
       onLeave={onLeave}
       onConnected={(peer) => onRecent(pushRecentDevice(active.server.id, active.peerId, peer.hostname || undefined))}
     />
@@ -130,7 +134,7 @@ interface HomeProps {
   setServers: (s: ServerEntry[]) => void;
   recent: RecentDevice[];
   setRecent: (r: RecentDevice[]) => void;
-  onConnect: (server: ServerEntry, peerId: string) => void;
+  onConnect: (server: ServerEntry, peerId: string, mode?: Mode) => void;
   initialPeer: string;
   lang: Lang;
   setLang: (l: Lang) => void;
@@ -249,6 +253,23 @@ function Home(p: HomeProps) {
               <Button type="submit" className="w-full" disabled={!peerId.trim() || !selected}>
                 {t("connect.button")}
               </Button>
+              <div className="grid grid-cols-2 gap-2">
+                {(["files", "terminal"] as const).map((m) => (
+                  <Button
+                    key={m}
+                    type="button"
+                    variant="outline"
+                    disabled={!peerId.trim() || !selected}
+                    onClick={() => {
+                      const id = peerId.replace(/\s+/g, "");
+                      if (selected && id) p.onConnect(selected, id, m);
+                    }}
+                  >
+                    {m === "files" ? <FolderOpen className="h-4 w-4" /> : <SquareTerminal className="h-4 w-4" />}
+                    {t(`connect.${m}`)}
+                  </Button>
+                ))}
+              </div>
               <p className="text-xs text-muted-foreground">{t("connect.hint")}</p>
             </form>
           )}
