@@ -27,6 +27,7 @@ const en = {
     deleteDesc: "The server is removed from this browser. Remembered device passwords for it stay until you clear the data.",
     empty: "No servers yet.",
     key: "Key",
+    check: "Check server",
   },
   editor: {
     importTitle: "Import a RustDesk config string",
@@ -54,6 +55,7 @@ const en = {
       "Browsers can only use WebSockets over TLS: /ws/id must reach hbbs (port 21118) and /ws/relay must reach hbbr (port 21119), for example through nginx, Caddy or angie with a certificate. RD Panel does this out of the box.",
     save: "Save",
     cancel: "Cancel",
+    check: "Check",
   },
   about: {
     title: "About",
@@ -73,9 +75,76 @@ const en = {
   install: {
     button: "Install",
     title: "Install rdweb",
-    ios: "Tap Share, then “Add to Home Screen”.",
-    macos: "In Safari's menu bar, choose File → Add to Dock.",
     hint: "The app opens in its own window and starts even when this website is unreachable.",
+    here: "On this device",
+    others: "Other browsers and devices",
+    platform: {
+      "android-chrome": "Chrome on Android",
+      "android-other": "Other Android browsers",
+      ios: "iPhone and iPad",
+      "macos-safari": "Safari on macOS",
+      "desktop-chromium": "Chrome and Edge on a computer",
+      firefox: "Firefox",
+      other: "This browser",
+    },
+    steps: {
+      "android-chrome": "Tap ⋮ at the top right, then “Install app” (or “Add to Home screen” → “Install”).",
+      "android-other":
+        "In the browser menu, choose “Install app” or “Add to Home screen” (Samsung Internet: ≡ → “Add page to” → “Home screen”; Firefox: ⋮ → “Add to Home screen”). If there is no such item, open this page in Chrome.",
+      ios: "In Safari, tap Share, then “Add to Home Screen”. On iOS 16.4 and later the Share menu of Chrome and Edge offers it too.",
+      "macos-safari": "In Safari 17 or later, choose File → Add to Dock in the menu bar.",
+      "desktop-chromium":
+        "Click the install icon at the right end of the address bar, or use the menu: Chrome ⋮ → “Cast, save and share” → “Install page as app”; Edge ⋯ → “Apps” → “Install this site as an app”.",
+      firefox: "Firefox on a computer cannot install web apps. Install rdweb from Chrome, Edge or Safari, or keep using it in a tab: it works the same.",
+      other: "Look for “Install app” or “Add to Home screen” in the browser menu. Chrome, Edge, Samsung Internet and Safari can install rdweb.",
+    },
+    troubleTitle: "Installing fails on Android?",
+    trouble: {
+      vpn: "Try again with a VPN on: Chrome builds the installed app (a WebAPK) through a Google service that may be unreachable from your network.",
+      clearData: "Delete this site's stored data in Chrome's site settings, reload and try again (this also removes the servers saved in rdweb).",
+      xiaomi:
+        "Xiaomi, Redmi, POCO (HyperOS, MIUI): allow Chrome to install apps (Settings → Apps → Chrome → “Install unknown apps”) and turn off the security scan of new apps while installing.",
+      otherBrowser: "Or install from Samsung Internet or Microsoft Edge.",
+      shortcut: "If nothing helps: Chrome menu ⋮ → “Add to Home screen” → “Create shortcut”. This adds a shortcut instead of an installed app.",
+    },
+  },
+  official: {
+    title: "Official RustDesk apps",
+    text: "The official RustDesk client can connect directly (P2P) and has more features. rdweb is an independent client, not made by the RustDesk team.",
+    github: "GitHub releases (Windows, macOS, Linux, Android)",
+    play: "Google Play",
+    fdroid: "F-Droid",
+    appstore: "App Store (iPhone, iPad)",
+  },
+  check: {
+    title: "Check {{name}}",
+    description: "Checks what a browser needs from this server. No device is contacted.",
+    device: "Device ID (optional)",
+    deviceHint: "The ID server tells whether this device is online; the device itself gets no request.",
+    run: "Check",
+    running: "Checking…",
+    passed: "Everything a browser needs works.",
+    failed: "Some checks failed; see the hints below.",
+    ms: "{{ms}} ms",
+    status: { ok: "passed", fail: "failed", skip: "not checked", running: "checking" },
+    step: { rendezvous: "ID server (hbbs)", key: "Server key", relay: "Relay (hbbr)", device: "Device {{id}}" },
+    hint: {
+      rendezvous:
+        "The browser could not open {{url}}. The domain must serve /ws/id over HTTPS with a valid certificate and pass it to hbbs (port 21118); an IP address or a RustDesk port such as 21116 or 21118 does not work in a browser.",
+      relay: "The browser could not open {{url}}. /ws/relay must reach hbbr (port 21119) over HTTPS with a valid certificate.",
+      badUrl: "This is not a WebSocket address a browser can open; check the server settings.",
+      keyMismatch:
+        "The ID server's key is signed with a different key than the one configured. Copy id_ed25519.pub from next to hbbs (the Key on RD Panel's Server page) into the server settings.",
+      keyInvalid: "The configured key is not a valid public key. Copy id_ed25519.pub from next to hbbs (the Key on RD Panel's Server page).",
+      keySkipped:
+        "Cannot be checked here: hbbs signs its key only on TCP connections, not over WebSocket. A wrong key shows up as “the server key does not match” when you connect.",
+      notReached: "Not checked: the ID server was not reached.",
+      online: "The device is online and registered on this server.",
+      offline:
+        "The ID server does not list this device as online. The device must be on, running RustDesk and registered on this server (with this server's ID server and key).",
+      noAnswer: "The ID server did not answer the presence query.",
+    },
+    error: "The check could not run: {{error}}",
   },
   update: { available: "A new version is available", reload: "Reload" },
   session: { back: "Back to devices" },
@@ -108,6 +177,7 @@ const ru: Messages = {
     deleteDesc: "Сервер будет удалён из этого браузера. Запомненные пароли устройств останутся, пока вы не очистите данные.",
     empty: "Серверов пока нет.",
     key: "Ключ",
+    check: "Проверить сервер",
   },
   editor: {
     importTitle: "Импорт строки конфигурации RustDesk",
@@ -135,6 +205,7 @@ const ru: Messages = {
       "Браузеры умеют только WebSocket поверх TLS: /ws/id должен вести на hbbs (порт 21118), а /ws/relay — на hbbr (порт 21119), например через nginx, Caddy или angie с сертификатом. RD Panel делает это сразу.",
     save: "Сохранить",
     cancel: "Отмена",
+    check: "Проверить",
   },
   about: {
     title: "О программе",
@@ -154,9 +225,76 @@ const ru: Messages = {
   install: {
     button: "Установить",
     title: "Установка rdweb",
-    ios: "Нажмите «Поделиться», затем «На экран „Домой“».",
-    macos: "В строке меню Safari выберите «Файл» → «Добавить в Dock».",
     hint: "Приложение откроется в отдельном окне и запустится, даже если этот сайт недоступен.",
+    here: "На этом устройстве",
+    others: "Другие браузеры и устройства",
+    platform: {
+      "android-chrome": "Chrome на Android",
+      "android-other": "Другие браузеры на Android",
+      ios: "iPhone и iPad",
+      "macos-safari": "Safari на macOS",
+      "desktop-chromium": "Chrome и Edge на компьютере",
+      firefox: "Firefox",
+      other: "Этот браузер",
+    },
+    steps: {
+      "android-chrome": "Нажмите ⋮ справа вверху, затем «Установить приложение» (или «Добавить на главный экран» → «Установить»).",
+      "android-other":
+        "В меню браузера выберите «Установить приложение» или «Добавить на главный экран» (Samsung Internet: ≡ → «Добавить страницу на» → «Главный экран»; Firefox: ⋮ → «Добавить на главный экран»). Если такого пункта нет, откройте эту страницу в Chrome.",
+      ios: "В Safari нажмите «Поделиться», затем «На экран „Домой“». В iOS 16.4 и новее этот пункт есть и в меню «Поделиться» Chrome и Edge.",
+      "macos-safari": "В Safari 17 или новее выберите в строке меню «Файл» → «Добавить в Dock».",
+      "desktop-chromium":
+        "Нажмите значок установки справа в адресной строке или откройте меню: Chrome ⋮ → «Трансляция, сохранение и отправка» → «Установить страницу как приложение»; Edge ⋯ → «Приложения» → «Установить этот сайт как приложение».",
+      firefox: "Firefox на компьютере не устанавливает веб-приложения. Установите rdweb из Chrome, Edge или Safari или пользуйтесь им во вкладке — работает так же.",
+      other: "Поищите в меню браузера «Установить приложение» или «Добавить на главный экран». Установить rdweb умеют Chrome, Edge, Samsung Internet и Safari.",
+    },
+    troubleTitle: "Не устанавливается на Android?",
+    trouble: {
+      vpn: "Попробуйте ещё раз с включённым VPN: Chrome собирает установленное приложение (WebAPK) через сервис Google, который из вашей сети может быть недоступен.",
+      clearData: "Удалите данные этого сайта в настройках сайтов Chrome, обновите страницу и попробуйте снова (это удалит и серверы, сохранённые в rdweb).",
+      xiaomi:
+        "Xiaomi, Redmi, POCO (HyperOS, MIUI): разрешите Chrome устанавливать приложения («Настройки» → «Приложения» → Chrome → «Установка неизвестных приложений») и на время установки отключите проверку новых приложений на безопасность.",
+      otherBrowser: "Или установите из Samsung Internet или Microsoft Edge.",
+      shortcut: "Если ничего не помогло: меню Chrome ⋮ → «Добавить на главный экран» → «Создать ярлык». Появится ярлык вместо установленного приложения.",
+    },
+  },
+  official: {
+    title: "Официальные приложения RustDesk",
+    text: "Официальный клиент RustDesk умеет подключаться напрямую (P2P) и умеет больше. rdweb — независимый клиент, его делает не команда RustDesk.",
+    github: "Релизы на GitHub (Windows, macOS, Linux, Android)",
+    play: "Google Play",
+    fdroid: "F-Droid",
+    appstore: "App Store (iPhone, iPad)",
+  },
+  check: {
+    title: "Проверка: {{name}}",
+    description: "Проверяет то, что нужно браузеру от этого сервера. К устройствам проверка не подключается.",
+    device: "ID устройства (необязательно)",
+    deviceHint: "ID-сервер сообщит, в сети ли устройство; само устройство запроса не получит.",
+    run: "Проверить",
+    running: "Проверка…",
+    passed: "Всё, что нужно браузеру, работает.",
+    failed: "Часть проверок не прошла — см. подсказки ниже.",
+    ms: "{{ms}} мс",
+    status: { ok: "пройдено", fail: "ошибка", skip: "не проверялось", running: "проверяется" },
+    step: { rendezvous: "ID-сервер (hbbs)", key: "Ключ сервера", relay: "Ретранслятор (hbbr)", device: "Устройство {{id}}" },
+    hint: {
+      rendezvous:
+        "Браузер не смог открыть {{url}}. Домен должен отдавать /ws/id по HTTPS с действительным сертификатом и передавать его на hbbs (порт 21118); IP-адрес или порт RustDesk вроде 21116 или 21118 в браузере не работают.",
+      relay: "Браузер не смог открыть {{url}}. /ws/relay должен вести на hbbr (порт 21119) по HTTPS с действительным сертификатом.",
+      badUrl: "Это не WebSocket-адрес, который может открыть браузер; проверьте настройки сервера.",
+      keyMismatch:
+        "Ключ ID-сервера подписан другим ключом, не тем, что указан. Скопируйте в настройки сервера id_ed25519.pub рядом с hbbs («Ключ» на странице «Сервер» RD Panel).",
+      keyInvalid: "Указанный ключ — не публичный ключ. Скопируйте id_ed25519.pub рядом с hbbs («Ключ» на странице «Сервер» RD Panel).",
+      keySkipped:
+        "Здесь не проверить: hbbs подписывает свой ключ только в TCP-подключениях, не в WebSocket. Неверный ключ проявится при подключении как «ключ сервера не совпадает».",
+      notReached: "Не проверялось: ID-сервер недоступен.",
+      online: "Устройство в сети и зарегистрировано на этом сервере.",
+      offline:
+        "ID-сервер не видит это устройство в сети. Устройство должно быть включено, RustDesk запущен и зарегистрирован на этом сервере (ID-сервер и ключ — этого сервера).",
+      noAnswer: "ID-сервер не ответил на запрос о статусе устройства.",
+    },
+    error: "Проверка не запустилась: {{error}}",
   },
   update: { available: "Доступна новая версия", reload: "Обновить" },
   session: { back: "К списку устройств" },
