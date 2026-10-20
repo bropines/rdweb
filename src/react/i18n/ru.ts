@@ -186,6 +186,8 @@ export const ru = {
       closeHint: "Завершить эти шеллы на устройстве",
       new: "Новый терминал",
     },
+    optionAsAlt: "Option работает как Alt",
+    optionAsAltHint: "Option+M отправляет в шелл Alt+M (как ждут CLI). Выключено — Option набирает спецсимволы.",
     toBottom: "К концу (Shift+End)",
     settings: "Настройки терминала",
     settingsDesc: "Сохраняются в этом браузере.",

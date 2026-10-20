@@ -45,6 +45,8 @@ export interface TerminalPrefs {
   copyOnSelect: boolean;
   /** Right click: copy the selection, or paste when nothing is selected. */
   rightClickPaste: boolean;
+  /** macOS: Option works as Alt/Meta (Option+M sends Alt+M) instead of typing special characters. */
+  optionAsAlt: boolean;
 }
 
 const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
@@ -54,6 +56,7 @@ const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
   persistent: true,
   copyOnSelect: true,
   rightClickPaste: true,
+  optionAsAlt: true,
 };
 
 function loadTerminalPrefs(storageKey: string): TerminalPrefs {
@@ -67,6 +70,7 @@ function loadTerminalPrefs(storageKey: string): TerminalPrefs {
       persistent: v.persistent !== false,
       copyOnSelect: v.copyOnSelect !== false,
       rightClickPaste: v.rightClickPaste !== false,
+      optionAsAlt: v.optionAsAlt !== false,
     };
   } catch {
     return { ...DEFAULT_TERMINAL_PREFS };
@@ -211,6 +215,23 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const [active, setActive] = useState(0);
   const activeRef = useRef(0);
   const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
+  // Ctrl / Alt from the extra keys bar, applied to the next key typed
+  const [sticky, setSticky] = useState<{ ctrl: boolean; alt: boolean }>({ ctrl: false, alt: false });
+  const stickyRef = useRef(sticky);
+  stickyRef.current = sticky;
+  const applySticky = (d: string): string => {
+    const m = stickyRef.current;
+    if ((!m.ctrl && !m.alt) || [...d].length !== 1) return d;
+    let out = d;
+    if (m.ctrl) {
+      const c = d.toUpperCase().charCodeAt(0);
+      if (c >= 0x40 && c <= 0x5f) out = String.fromCharCode(c & 0x1f); // Ctrl+A..Z, [ \\ ] ^ _
+      else if (d === " ") out = "\x00";
+    }
+    if (m.alt) out = `\x1b${out}`;
+    setSticky({ ctrl: false, alt: false });
+    return out;
+  };
 
   const updateScrolled = (id: number) => {
     if (id !== activeRef.current) return;
@@ -243,7 +264,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       theme: { background: "#0a0a0a" },
       allowProposedApi: true, // unicode11 and search decorations
       rightClickSelectsWord: false,
-      macOptionIsMeta: true,
+      macOptionIsMeta: prefsRef.current.optionAsAlt,
     });
     const fit = new lib.FitAddon();
     const search = new lib.SearchAddon();
@@ -256,7 +277,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     term.open(el);
     fit.fit();
     term.onData((d) => {
-      if (!pane.replaying) sessRef.current?.write(d, id);
+      if (pane.replaying) return;
+      sessRef.current?.write(applySticky(d), id);
     });
     // Shift+PageUp/PageDown/Home/End page through the scrollback (like most terminals)
     term.attachCustomKeyEventHandler((e) => {
@@ -558,6 +580,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     for (const p of panes.current.values()) {
       p.term.options.fontFamily = fontStack(next);
       p.term.options.fontSize = next.fontSize;
+      p.term.options.macOptionIsMeta = next.optionAsAlt;
     }
     fitActive();
   };
@@ -761,6 +784,22 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       </div>
       {touch && ready && (
         <div className="flex shrink-0 gap-1 overflow-x-auto border-t border-white/10 px-1.5 py-1" aria-label={t("terminal.keys")}>
+          {(["ctrl", "alt"] as const).map((m) => (
+            <Button
+              key={m}
+              size="sm"
+              variant="ghost"
+              aria-pressed={sticky[m]}
+              className={cn("h-8 shrink-0 px-2.5 font-mono text-white hover:bg-white/10 hover:text-white", sticky[m] && "bg-primary text-primary-foreground hover:bg-primary")}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setSticky((s) => ({ ...s, [m]: !s[m] }));
+                panes.current.get(active)?.term.focus();
+              }}
+            >
+              {m === "ctrl" ? "Ctrl" : "Alt"}
+            </Button>
+          ))}
           {EXTRA_KEYS.map(([label, seq]) => (
             <Button
               key={label}
@@ -768,7 +807,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
               variant="ghost"
               className="h-8 shrink-0 px-2.5 font-mono text-white hover:bg-white/10 hover:text-white"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => sessRef.current?.write(seq, active)}
+              onClick={() => sessRef.current?.write(stickyRef.current.alt && seq.length === 1 ? applySticky(seq) : seq, active)}
             >
               {label}
             </Button>
@@ -842,6 +881,15 @@ function TerminalSettings({
               <span className="block text-xs text-muted-foreground">{t("terminal.nerdSymbolsHint")}</span>
             </span>
           </label>
+          {isMac && (
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox checked={draft.optionAsAlt} onCheckedChange={(v) => setDraft({ ...draft, optionAsAlt: v === true })} className="mt-0.5" />
+              <span>
+                {t("terminal.optionAsAlt")}
+                <span className="block text-xs text-muted-foreground">{t("terminal.optionAsAltHint")}</span>
+              </span>
+            </label>
+          )}
           <label className="flex items-start gap-2 text-sm">
             <Checkbox checked={draft.copyOnSelect} onCheckedChange={(v) => setDraft({ ...draft, copyOnSelect: v === true })} className="mt-0.5" />
             <span>{t("terminal.copyOnSelect")}</span>

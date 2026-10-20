@@ -191,6 +191,8 @@ export const en = {
       closeHint: "End these shells on the device",
       new: "New terminal",
     },
+    optionAsAlt: "Option works as Alt",
+    optionAsAltHint: "Option+M sends Alt+M to the shell (as CLIs expect). Off: Option types special characters.",
     toBottom: "Scroll to the end (Shift+End)",
     settings: "Terminal settings",
     settingsDesc: "Saved in this browser.",
