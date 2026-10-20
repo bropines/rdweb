@@ -9,6 +9,7 @@ import { Input } from "@ui/input";
 import { Label } from "@ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ui/select";
 
+import { BUILD, COMMIT_URL, SHORT_COMMIT } from "./build";
 import { AppI18n, appTranslator, initialLang, storeLang, useAppI18n } from "./i18n";
 import { ServerEditor } from "./ServerEditor";
 import {
@@ -163,7 +164,12 @@ function Home(p: HomeProps) {
         <div className="mx-auto flex max-w-5xl items-center gap-2 px-4 py-3">
           <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-7 w-7" />
           <div className="min-w-0 flex-1">
-            <div className="font-semibold leading-tight">rdweb</div>
+            <div className="font-semibold leading-tight">
+              rdweb{" "}
+              <span className="font-mono text-xs font-normal text-muted-foreground" title={SHORT_COMMIT ? `${SHORT_COMMIT} · ${BUILD.date}` : BUILD.date}>
+                v{BUILD.version}
+              </span>
+            </div>
             <div className="truncate text-xs text-muted-foreground">{t("tagline")}</div>
           </div>
           <DropdownMenu>
@@ -316,7 +322,7 @@ function Home(p: HomeProps) {
         <a className="underline-offset-4 hover:underline" href={SOURCE_URL} target="_blank" rel="noreferrer noopener">
           {t("about.source")}
         </a>{" "}
-        · MIT
+        · MIT · <BuildInfo />
       </footer>
 
       <ServerEditor
@@ -396,6 +402,9 @@ function About({ open, onOpenChange, onClear }: { open: boolean; onOpenChange: (
               {t("about.source")}: github.com/bropines/rdweb
             </a>
           </p>
+          <p className="text-xs text-muted-foreground">
+            {t("about.build")}: <BuildInfo />
+          </p>
         </div>
         <DialogFooter className="gap-2">
           <Button variant={armed ? "destructive" : "outline"} className={armed ? "h-auto whitespace-normal" : "text-destructive"} onClick={() => (armed ? onClear() : setArmed(true))}>
@@ -406,5 +415,24 @@ function About({ open, onOpenChange, onClear }: { open: boolean; onOpenChange: (
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** "rdweb 0.4.1 · 0021d01 · 2026-10-20": which build this page is. */
+function BuildInfo() {
+  return (
+    <span className="whitespace-nowrap font-mono">
+      v{BUILD.version}
+      {SHORT_COMMIT && (
+        <>
+          {" · "}
+          <a className="underline-offset-4 hover:underline" href={COMMIT_URL} target="_blank" rel="noreferrer noopener">
+            {SHORT_COMMIT}
+          </a>
+        </>
+      )}
+      {" · "}
+      {BUILD.date}
+    </span>
   );
 }
