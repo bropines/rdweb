@@ -167,6 +167,7 @@ export const en = {
     passwordDesc: "Enter the device password to open its terminal.",
     ended: "The terminal session ended: {{reason}}",
     keys: "Extra keys",
+    toBottom: "Scroll to the end (Shift+End)",
     settings: "Terminal settings",
     settingsDesc: "Saved in this browser.",
     fontFamily: "Font",
