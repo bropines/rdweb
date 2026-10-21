@@ -326,7 +326,12 @@ function Home(p: HomeProps) {
                         className="h-auto max-w-full flex-col items-start gap-0 py-1"
                         disabled={!server}
                         title={server ? undefined : t("connect.unknownServer")}
-                        onClick={() => server && connect(server, r.id)}
+                        // fills the form; Connect, Files only or Terminal is the user's choice
+                        onClick={() => {
+                          if (!server) return;
+                          setServerId(server.id);
+                          setPeerId(r.id);
+                        }}
                       >
                         <span className="max-w-full truncate">{r.name ? `${r.name} · ${r.id}` : r.id}</span>
                         <span className="max-w-full truncate text-[10px] font-normal text-muted-foreground">{server ? (isPublicServer(server) ? t("public.short") : server.name) : "—"}</span>
