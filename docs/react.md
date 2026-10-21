@@ -262,12 +262,19 @@ PowerShell or cmd on Windows, the user's shell elsewhere.
   phone keyboard; Shift then Enter is a new line). Swipe up on `/` or `-` for
   `\` or `|`. The pinned ▲ key shows more layers above: F1–F12, ^C ^D ^Z ^L
   ^R, Ins, Del, Paste and `` | ~ ` \ { } [ ] < > ``; a swipe down over ▲ hides
-  the bar (a button bottom left brings it back). The terminal stays above the
+  the bar (the keyboard button in the header brings it back). The terminal stays above the
   on-screen keyboard, one finger scrolls with momentum (no pull-to-refresh), and
   a two-finger pinch changes the font size (5–32).
+- Touch selection: a long press selects the word under the finger, dragging
+  extends it (scrolling at the top and bottom edge), and a menu offers Copy,
+  Paste and Select all. A long press never pastes.
 - "Send letters as you type" (touch screens, on by default): phone keyboards
   such as Gboard or Yandex hold a word until space; with this every letter goes
-  out at once, so shells highlight and complete as you type.
+  out at once, so shells highlight and complete as you type. The cursor keys of
+  the keyboard's own editing panel work as arrows, Home and End.
+- Rendering uses WebGL where available (the DOM otherwise): box drawing, block
+  elements and powerline glyphs are drawn by the terminal itself, so frames and
+  TUIs have no gaps even with a phone's system font.
 - Windows devices: xterm runs in ConPTY mode and tells the device about a new
   size once it settles, so resizing garbles the history less.
 - Settings (kept in this browser): a font installed on the computer (empty:

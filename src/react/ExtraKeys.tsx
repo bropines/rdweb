@@ -28,6 +28,12 @@ export interface ExtraKeysProps {
   showLabel?: string;
   /** localStorage key for whether the layers are open or the bar hidden. */
   stateKey?: string;
+  /**
+   * Hidden from outside: with onHiddenChange the host shows its own button to
+   * bring the bar back (none is drawn), and a swipe down asks it to hide.
+   */
+  hidden?: boolean;
+  onHiddenChange?: (hidden: boolean) => void;
   /** Accessible names for keys drawn as icons (arrows, backspace), by id. */
   names?: Record<string, string>;
   className?: string;
@@ -51,8 +57,14 @@ function loadState(key?: string): BarState {
 }
 
 export function ExtraKeys(props: ExtraKeysProps) {
-  const [state, setStateRaw] = useState<BarState>(() => loadState(props.stateKey));
+  const [inner, setStateRaw] = useState<BarState>(() => loadState(props.stateKey));
+  const controlled = props.onHiddenChange !== undefined;
+  const state: BarState = controlled ? (props.hidden ? "hidden" : inner === "more" ? "more" : "base") : inner;
   const setState = (next: BarState) => {
+    if (controlled && next === "hidden") {
+      props.onHiddenChange!(true);
+      return;
+    }
     setStateRaw(next);
     try {
       if (props.stateKey) localStorage.setItem(props.stateKey, next);
@@ -126,6 +138,7 @@ export function ExtraKeys(props: ExtraKeysProps) {
   };
 
   if (state === "hidden") {
+    if (controlled) return null;
     return (
       <div className="relative h-0 shrink-0">
         <button
