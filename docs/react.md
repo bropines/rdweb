@@ -270,8 +270,9 @@ PowerShell or cmd on Windows, the user's shell elsewhere.
   Paste and Select all. A long press never pastes.
 - "Send letters as you type" (touch screens, on by default): phone keyboards
   such as Gboard or Yandex hold a word until space; with this every letter goes
-  out at once, so shells highlight and complete as you type. The cursor keys of
-  the keyboard's own editing panel work as arrows, Home and End.
+  out at once, so shells highlight and complete as you type. The arrows of the
+  keyboard's own editing panel (Yandex, Gboard) arrive as real keys and move
+  the shell's cursor.
 - Rendering uses WebGL where available (the DOM otherwise): box drawing, block
   elements and powerline glyphs are drawn by the terminal itself, so frames and
   TUIs have no gaps even with a phone's system font.
