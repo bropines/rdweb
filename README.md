@@ -95,7 +95,8 @@ with WebCodecs. It is three things:
 
 **Standalone app**
 
-- Saved servers, RustDesk config string import, server check, recent devices.
+- Saved servers, RustDesk config string import, server check, recent devices,
+  default connection settings and settings kept per device.
 - RustDesk's public server as an experimental option when you have no server
   of your own.
 - Installable app that starts offline, with an update prompt.

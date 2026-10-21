@@ -4,6 +4,8 @@
 //   <prefix>.prefs                          settings, view and toolbar prefs
 //   <prefix>.pw.<server key[0:16]>.<peer>   remembered password hash
 //   <prefix>.recent                         recently connected devices
+//   <prefix>.device.<server key[0:16]>.<peer>  this device's settings that
+//                                           differ from the defaults (prefs)
 //   <prefix>.files.localPane                file manager: local pane shown
 // (and the file manager's local folder handle in IndexedDB, see localFolder.ts)
 // RD Panel's web client used exactly this layout with the prefix
@@ -45,6 +47,7 @@ const keys = (prefix: string) => ({
   prefs: `${prefix}.prefs`,
   pw: `${prefix}.pw.`,
   recent: `${prefix}.recent`,
+  device: `${prefix}.device.`,
 });
 
 function read<T>(key: string): T | null {
@@ -117,6 +120,77 @@ export function hasRememberedHash(serverKey: string, peerId: string, storageKey:
   return read<string>(pwKey(storageKey, serverKey, peerId)) !== null;
 }
 
+/**
+ * Connection settings kept per device (like the desktop client's per-peer
+ * settings): what a session changes is remembered for that device, the
+ * prefs hold the defaults. Only the differences from the defaults are
+ * stored, so later changes to the defaults still reach every device that
+ * did not override them. View only is a per-session choice and never kept.
+ */
+export interface DevicePrefs {
+  settings?: Partial<SessionSettings>;
+  scaleMode?: ScaleMode;
+}
+
+/** The settings a device can override. */
+export const DEVICE_SETTING_KEYS = [
+  "imageQuality",
+  "customQuality",
+  "customFps",
+  "codec",
+  "trueColor",
+  "showRemoteCursor",
+  "followRemoteCursor",
+  "followRemoteWindow",
+  "disableAudio",
+  "disableClipboard",
+  "lockAfterSessionEnd",
+  "showMyCursor",
+  "keyboardMode",
+  "swapCtrlMeta",
+] as const satisfies readonly (keyof SessionSettings)[];
+
+function deviceKey(storageKey: string, serverKey: string, peerId: string): string {
+  return `${keys(storageKey).device}${serverKey.slice(0, 16)}.${peerId}`;
+}
+
+export function loadDevicePrefs(serverKey: string, peerId: string, storageKey: string = DEFAULT_STORAGE_KEY): DevicePrefs {
+  const v = read<DevicePrefs>(deviceKey(storageKey, serverKey, peerId));
+  if (!v || typeof v !== "object") return {};
+  const settings: Partial<SessionSettings> = {};
+  for (const k of DEVICE_SETTING_KEYS) {
+    const x = v.settings?.[k];
+    if (x !== undefined && typeof x === typeof DEFAULT_SETTINGS[k]) (settings as Record<string, unknown>)[k] = x;
+  }
+  const scaleMode = v.scaleMode === "fit" || v.scaleMode === "original" || v.scaleMode === "stretch" ? v.scaleMode : undefined;
+  return { ...(Object.keys(settings).length ? { settings } : {}), ...(scaleMode ? { scaleMode } : {}) };
+}
+
+/** Stores a device's overrides; an empty one (or null) forgets them. */
+export function saveDevicePrefs(serverKey: string, peerId: string, d: DevicePrefs | null, storageKey: string = DEFAULT_STORAGE_KEY): void {
+  const empty = !d || (!d.scaleMode && !Object.keys(d.settings ?? {}).length);
+  write(deviceKey(storageKey, serverKey, peerId), empty ? null : d);
+}
+
+/** The defaults with a device's overrides applied. */
+export function withDevicePrefs(defaults: WebClientPrefs, d: DevicePrefs): WebClientPrefs {
+  return {
+    ...defaults,
+    settings: { ...defaults.settings, ...(d.settings ?? {}), viewOnly: defaults.settings.viewOnly },
+    view: { ...defaults.view, ...(d.scaleMode ? { scaleMode: d.scaleMode } : {}) },
+  };
+}
+
+/** What a session's prefs change from the defaults, as a device's overrides. */
+export function devicePrefsOf(defaults: WebClientPrefs, current: WebClientPrefs): DevicePrefs {
+  const settings: Partial<SessionSettings> = {};
+  for (const k of DEVICE_SETTING_KEYS) {
+    if (current.settings[k] !== defaults.settings[k]) (settings as Record<string, unknown>)[k] = current.settings[k];
+  }
+  const scaleMode = current.view.scaleMode !== defaults.view.scaleMode ? current.view.scaleMode : undefined;
+  return { ...(Object.keys(settings).length ? { settings } : {}), ...(scaleMode ? { scaleMode } : {}) };
+}
+
 export interface RecentPeer {
   id: string;
   name?: string;
@@ -157,6 +231,7 @@ export function clearStoredData(storageKey: string = DEFAULT_STORAGE_KEY): void 
   removeWhere(
     (key) =>
       key.startsWith(k.pw) ||
+      key.startsWith(k.device) ||
       key === k.recent ||
       key === k.prefs ||
       key === `${storageKey}.keys` || // the extra keys bar: layers open or hidden

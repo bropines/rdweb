@@ -72,7 +72,15 @@ export const en = {
     delay: "delay",
     target: "target",
   },
+  defaults: {
+    title: "Default connection settings",
+    desc: "For devices without settings of their own. What you change during a session is kept for that device.",
+    reset: "Reset all",
+  },
   settings: {
+    deviceOwn: "This device has settings of its own; changes here are kept for it.",
+    deviceDefaults: "This device uses the default settings; changes here are kept for this device.",
+    resetToDefaults: "Reset to the defaults",
     title: "Session settings",
     desc: "Display and control settings for this session.",
     display: "Display",
