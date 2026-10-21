@@ -55,6 +55,7 @@ const fakes = vi.hoisted(() => {
     handlers = new Map<string, Set<Handler>>();
     peer: unknown = null;
     connect = vi.fn(() => new Promise<void>(() => {}));
+    login = vi.fn(async (_pw: string) => {});
     close = vi.fn();
     constructor() {
       FakeFileTransfer.all.push(this);
@@ -82,7 +83,7 @@ vi.mock("../../src/index.js", async (importOriginal) => ({
   isWebCodecsAvailable: () => true,
 }));
 
-const { RemoteDesktop, loadRecent } = await import("../../src/react/index.js");
+const { RemoteDesktop, loadRecent, loadRememberedHash } = await import("../../src/react/index.js");
 
 const server = { rendezvousUrl: "wss://rd.example.com/ws/id", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" };
 const peer: PeerSummary = {
@@ -232,5 +233,20 @@ describe("<RemoteDesktop>", () => {
     await act(async () => ft.emit("connected", { home: null }));
     expect(onConnected).toHaveBeenCalledWith(expect.objectContaining({ id: "555666777", hostname: "nas", displays: [] }));
     expect(loadRecent().map((r) => r.id)).toContain("555666777");
+  });
+  it("offers to remember the password in the files only mode", async () => {
+    localStorage.clear();
+    const onRemembered = vi.fn();
+    render(<RemoteDesktop peerId="555666777" mode="files" server={server} onLeave={vi.fn()} onRemembered={onRemembered} />);
+    const ft = fakes.FakeFileTransfer.all.at(-1)!;
+    await act(async () => ft.emit("password", { wrong: false }));
+    fireEvent.change(screen.getByLabelText("Remote device password"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Remember password/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    expect(ft.login).toHaveBeenCalledWith("secret");
+    const hash = new Uint8Array([1, 2, 3]);
+    await act(async () => ft.emit("connected", { home: null, rememberedHash: hash }));
+    expect(onRemembered).toHaveBeenCalledWith(hash);
+    expect(loadRememberedHash(server.key, "555666777")).toEqual(hash);
   });
 });

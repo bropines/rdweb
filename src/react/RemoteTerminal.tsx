@@ -7,7 +7,7 @@ import { ConnectPane, type ConnState } from "./FilesSheet.js";
 import { useI18n } from "./i18n/index.js";
 import { cn, SCOPE } from "./lib/utils.js";
 import { screenlessPeer } from "./peerSummary.js";
-import { DEFAULT_STORAGE_KEY, loadRememberedHash, pushRecent } from "./prefs.js";
+import { DEFAULT_STORAGE_KEY, loadRememberedHash, pushRecent, saveRememberedHash } from "./prefs.js";
 import type { RemoteDesktopProps } from "./RemoteDesktop.js";
 import { Button } from "./ui/button.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog.js";
@@ -210,6 +210,9 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const [error, setError] = useState("");
   const [wrong, setWrong] = useState(false);
   const [secret, setSecret] = useState("");
+  const [remember, setRemember] = useState(false);
+  const rememberRef = useRef(false);
+  rememberRef.current = remember;
   const [ended, setEnded] = useState<string | null>(null);
   const [title, setTitle] = useState(props.peerId);
   const [prefs, setPrefs] = useState<TerminalPrefs>(() => loadTerminalPrefs(storageKey));
@@ -477,6 +480,11 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         setConn("twoFactor");
       });
       s.on("waitingForApproval", () => setConn("waiting"));
+      s.on("connected", ({ rememberedHash }) => {
+        if (!rememberedHash || !rememberRef.current) return;
+        saveRememberedHash(props.server.key, props.peerId, rememberedHash, storageKey);
+        void Promise.resolve(props.onRemembered?.(rememberedHash)).catch(() => {});
+      });
       s.on("data", ({ terminalId, data, replay }) => {
         const p = panes.current.get(terminalId);
         if (!p) return;
@@ -1145,6 +1153,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
                   secret={secret}
                   setSecret={setSecret}
                   passwordDesc={t("terminal.passwordDesc")}
+                  remember={remember}
+                  onRemember={setRemember}
                   connectingText={t("terminal.connecting")}
                   onSubmit={() => {
                     const s = sessRef.current;

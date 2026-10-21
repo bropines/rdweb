@@ -188,6 +188,7 @@ function RemoteFiles(props: RemoteDesktopProps) {
           pushRecent(props.peerId, peer.hostname || undefined, storageKey);
           props.onConnected?.(screenlessPeer(peer));
         }}
+        onRemembered={(hash) => props.onRemembered?.(hash)}
       />
     </div>
   );

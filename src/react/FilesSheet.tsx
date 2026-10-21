@@ -51,7 +51,7 @@ import {
   type LocalConflict,
   type LocalEntry,
 } from "./localFolder.js";
-import { DEFAULT_STORAGE_KEY } from "./prefs.js";
+import { DEFAULT_STORAGE_KEY, saveRememberedHash } from "./prefs.js";
 import { Button } from "./ui/button.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog.js";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu.js";
@@ -77,6 +77,8 @@ export interface FilesSheetProps {
   title?: string;
   /** The file transfer connection is up. */
   onConnected?(peer: FilePeerSummary): void;
+  /** Offer "Remember password" when asked for one (Files only mode); called with the salted hash it kept. */
+  onRemembered?(hash: Uint8Array): void | Promise<unknown>;
   /** Files to upload into the current folder once connected (pasted or dropped on the screen). */
   incoming?: UploadItem[] | null;
   onIncomingDone?: () => void;
@@ -175,6 +177,9 @@ export function FilesSheet(p: FilesSheetProps) {
   const [connError, setConnError] = useState("");
   const [pwWrong, setPwWrong] = useState(false);
   const [secret, setSecret] = useState("");
+  const [remember, setRemember] = useState(false);
+  const rememberRef = useRef(false);
+  rememberRef.current = remember;
   const [cwd, setCwd] = useState("");
   const [pathInput, setPathInput] = useState("");
   const [entries, setEntries] = useState<RemoteEntry[]>([]);
@@ -249,10 +254,14 @@ export function FilesSheet(p: FilesSheetProps) {
       setConn("twoFactor");
     });
     ft.on("waitingForApproval", () => setConn("waiting"));
-    ft.on("connected", ({ home }) => {
+    ft.on("connected", ({ home, rememberedHash }) => {
       setConn("ready");
       const peer = ft.peer;
       if (peer) p.onConnected?.(peer);
+      if (rememberedHash && rememberRef.current && p.onRemembered) {
+        saveRememberedHash(p.server.key, p.peerId, rememberedHash, storageKey);
+        void Promise.resolve(p.onRemembered(rememberedHash)).catch(() => {});
+      }
       if (home) {
         setCwd(home.path);
         setPathInput(home.path);
@@ -647,6 +656,8 @@ export function FilesSheet(p: FilesSheetProps) {
                   wrong={pwWrong}
                   secret={secret}
                   setSecret={setSecret}
+                  remember={remember}
+                  onRemember={p.onRemembered ? setRemember : undefined}
                   onSubmit={() => {
                     const ft = ftRef.current;
                     if (!ft || !secret) return;
@@ -875,6 +886,8 @@ export function ConnectPane({
   onRetry,
   passwordDesc,
   connectingText,
+  remember,
+  onRemember,
 }: {
   state: ConnState;
   error: string;
@@ -885,6 +898,9 @@ export function ConnectPane({
   onRetry: () => void;
   passwordDesc?: string;
   connectingText?: string;
+  /** "Remember password" (shown with onRemember): the login's salted hash is kept in this browser. */
+  remember?: boolean;
+  onRemember?: (on: boolean) => void;
 }) {
   const { t } = useI18n();
   if (state === "password" || state === "twoFactor" || state === "waiting") {
@@ -910,6 +926,15 @@ export function ConnectPane({
           placeholder={state === "twoFactor" ? "123456" : t("passwordPlaceholder")}
           autoFocus
         />
+        {state === "password" && onRemember && (
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox checked={!!remember} onCheckedChange={(v) => onRemember(v === true)} className="mt-0.5" />
+            <span>
+              {t("rememberPassword")}
+              <span className="block text-xs text-muted-foreground">{t("rememberHint")}</span>
+            </span>
+          </label>
+        )}
         <Button type="submit" className="w-full" disabled={!secret}>
           {state === "twoFactor" ? t("verify") : t("connect")}
         </Button>
