@@ -18,6 +18,11 @@ import { XTERM_CSS } from "./xtermCss.js";
 const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused"];
 
 /** Keys a phone keyboard lacks, as terminal input. */
+/** Keys repeated while held (like a hardware keyboard). */
+const REPEATING = new Set(["↑", "↓", "←", "→"]);
+const REPEAT_DELAY_MS = 400;
+const REPEAT_EVERY_MS = 60;
+
 const EXTRA_KEYS: [string, string][] = [
   ["Esc", "\x1b"],
   ["Tab", "\t"],
@@ -217,6 +222,16 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
   // Ctrl / Alt from the extra keys bar, applied to the next key typed
   const [sticky, setSticky] = useState<{ ctrl: boolean; alt: boolean }>({ ctrl: false, alt: false });
+  // held extra key: the pending delay, then the repeat interval
+  const repeatRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopRepeat = () => {
+    if (repeatRef.current !== null) {
+      clearTimeout(repeatRef.current);
+      clearInterval(repeatRef.current);
+      repeatRef.current = null;
+    }
+  };
+  useEffect(() => stopRepeat, []);
   const stickyRef = useRef(sticky);
   stickyRef.current = sticky;
   const applySticky = (d: string): string => {
@@ -827,14 +842,14 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         )}
       </div>
       {touch && ready && (
-        <div className="flex shrink-0 gap-1 overflow-x-auto border-t border-white/10 px-1.5 py-1" aria-label={t("terminal.keys")}>
+        <div className="flex shrink-0 gap-1 overflow-x-auto border-t border-white/10 px-1.5 py-1.5" aria-label={t("terminal.keys")}>
           {(["ctrl", "alt"] as const).map((m) => (
             <Button
               key={m}
               size="sm"
               variant="ghost"
               aria-pressed={sticky[m]}
-              className={cn("h-8 shrink-0 px-2.5 font-mono text-white hover:bg-white/10 hover:text-white", sticky[m] && "bg-primary text-primary-foreground hover:bg-primary")}
+              className={cn("h-11 min-w-11 shrink-0 px-3.5 font-mono text-base text-white hover:bg-white/10 hover:text-white", sticky[m] && "bg-primary text-primary-foreground hover:bg-primary")}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 setSticky((s) => ({ ...s, [m]: !s[m] }));
@@ -849,9 +864,23 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
               key={label}
               size="sm"
               variant="ghost"
-              className="h-8 shrink-0 px-2.5 font-mono text-white hover:bg-white/10 hover:text-white"
+              className="h-11 min-w-11 shrink-0 touch-none select-none px-3.5 font-mono text-base text-white hover:bg-white/10 hover:text-white"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => sessRef.current?.write(stickyRef.current.alt && seq.length === 1 ? applySticky(seq) : seq, active)}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                const send = () => sessRef.current?.write(stickyRef.current.alt && seq.length === 1 ? applySticky(seq) : seq, active);
+                send();
+                stopRepeat();
+                if (REPEATING.has(label)) {
+                  repeatRef.current = setTimeout(() => {
+                    repeatRef.current = setInterval(send, REPEAT_EVERY_MS);
+                  }, REPEAT_DELAY_MS);
+                }
+              }}
+              onPointerUp={stopRepeat}
+              onPointerLeave={stopRepeat}
+              onPointerCancel={stopRepeat}
+              onContextMenu={(e) => e.preventDefault()}
             >
               {label}
             </Button>
