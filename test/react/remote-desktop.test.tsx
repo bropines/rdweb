@@ -249,4 +249,26 @@ describe("<RemoteDesktop>", () => {
     expect(onRemembered).toHaveBeenCalledWith(hash);
     expect(loadRememberedHash(server.key, "555666777")).toEqual(hash);
   });
+  it("keeps what a session changes for that device and can reset it to the defaults", async () => {
+    localStorage.setItem("rdweb.prefs", JSON.stringify({ settings: { codec: "av1" } }));
+    render(<RemoteDesktop peerId="777" server={server} onLeave={vi.fn()} />);
+    expect(session().opts.settings).toMatchObject({ codec: "av1" });
+    act(() => session().emit("state", { state: "connected" }));
+    await act(async () => session().emit("connected", { peer, rememberedHash: null }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Session settings" })[0]!);
+    const sheet = screen.getByRole("dialog", { name: "Session settings" });
+    expect(within(sheet).getByText(/uses the default settings/)).toBeTruthy();
+    fireEvent.click(within(sheet).getByRole("switch", { name: "Mute" }));
+    expect(session().updateSettings).toHaveBeenLastCalledWith({ disableAudio: true });
+    const own = JSON.parse(localStorage.getItem(`rdweb.device.${server.key.slice(0, 16)}.777`)!);
+    expect(own).toEqual({ settings: { disableAudio: true } });
+    expect(JSON.parse(localStorage.getItem("rdweb.prefs")!).settings).toMatchObject({ codec: "av1", disableAudio: false }); // the defaults stay
+    fireEvent.click(within(sheet).getByRole("button", { name: "Reset to the defaults" }));
+    expect(session().updateSettings).toHaveBeenLastCalledWith(expect.objectContaining({ codec: "av1", disableAudio: false }));
+    expect(localStorage.getItem(`rdweb.device.${server.key.slice(0, 16)}.777`)).toBeNull();
+    cleanup();
+    // another device starts from the defaults
+    render(<RemoteDesktop peerId="888" server={server} onLeave={vi.fn()} />);
+    expect(session().opts.settings).toMatchObject({ codec: "av1", disableAudio: false });
+  });
 });

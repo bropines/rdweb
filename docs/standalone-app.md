@@ -100,6 +100,11 @@ password" stores a salted hash in this browser, never the password itself
 under the form: one tap fills in the server and the ID, then Connect, Files
 only or Terminal; the browser's back button leaves a session.
 
+**Connection settings** in the header sets the defaults for new connections:
+codec, image quality and frame rate, view, true color, cursor, pointer input,
+keyboard mode, sound, clipboard. What you change in a session's settings is
+kept for that device; its **Reset to the defaults** goes back to them.
+
 ## Checking a server
 
 The stethoscope button on a saved server, or "Check" in the server editor for
@@ -169,9 +174,8 @@ RustDesk team.
 - Servers, recent devices, settings, remembered password hashes and choices
   such as using the public server stay in this browser's localStorage (`rdweb.app.*` for the app's own data, `rdweb.*`
   for the session UI). **About → Clear all data in this browser** removes
-  servers, recent devices, remembered password hashes and settings. Terminal
-  settings and the list of kept shells (`rdweb.terminal*`) are not part of it;
-  clear the site's data in the browser to remove everything.
+  servers, recent devices, remembered password hashes, settings (default and
+  per device), terminal settings and the list of kept shells.
 
 English and Russian, light, dark or system theme, phone layouts.
 

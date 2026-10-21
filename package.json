@@ -1,6 +1,6 @@
 {
   "name": "rdweb",
-  "version": "0.7.5",
+  "version": "0.8.0",
   "description": "Browser remote desktop client for RustDesk-compatible servers (hbbs/hbbr over WebSocket, WebCodecs video), with an optional React UI.",
   "license": "MIT",
   "type": "module",

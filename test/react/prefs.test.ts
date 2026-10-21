@@ -12,6 +12,10 @@ import {
   pushRecent,
   saveRememberedHash,
   savePrefs,
+  devicePrefsOf,
+  loadDevicePrefs,
+  saveDevicePrefs,
+  withDevicePrefs,
 } from "../../src/react/prefs.js";
 
 const KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
@@ -94,5 +98,32 @@ describe("prefs storage", () => {
     expect(localStorage.getItem("a.terminal.shells.K.1")).toBeNull();
     expect(sessionStorage.getItem("a.terminal.service.K.1")).toBeNull();
     expect(localStorage.getItem("b.terminal")).toBe("{}");
+  });
+
+  it("keeps a device's own settings as differences from the defaults", () => {
+    const defaults = loadPrefs("a");
+    const mine = withDevicePrefs(defaults, {});
+    mine.settings = { ...mine.settings, codec: "vp9", customFps: 60, viewOnly: true };
+    mine.view = { ...mine.view, scaleMode: "original", zoomCursor: true };
+    const own = devicePrefsOf(defaults, mine);
+    // only the device settings, never view only or the global view prefs
+    expect(own).toEqual({ settings: { codec: "vp9", customFps: 60 }, scaleMode: "original" });
+    saveDevicePrefs(KEY, "42", own, "a");
+    expect(loadDevicePrefs(KEY, "42", "a")).toEqual(own);
+    expect(loadDevicePrefs(KEY, "43", "a")).toEqual({});
+    // later defaults still reach what the device did not override
+    savePrefs({ ...defaults, settings: { ...defaults.settings, imageQuality: "best", codec: "av1" } }, "a");
+    const merged = withDevicePrefs(loadPrefs("a"), loadDevicePrefs(KEY, "42", "a"));
+    expect([merged.settings.imageQuality, merged.settings.codec, merged.settings.customFps, merged.view.scaleMode]).toEqual(["best", "vp9", 60, "original"]);
+    // nothing of its own: the entry goes
+    saveDevicePrefs(KEY, "42", {}, "a");
+    expect(localStorage.getItem(`a.device.${KEY.slice(0, 16)}.42`)).toBeNull();
+  });
+
+  it("ignores malformed device settings and clears them with the rest", () => {
+    localStorage.setItem(`a.device.${KEY.slice(0, 16)}.42`, JSON.stringify({ settings: { codec: 5, customFps: 30, evil: "x" }, scaleMode: "zoom" }));
+    expect(loadDevicePrefs(KEY, "42", "a")).toEqual({ settings: { customFps: 30 } });
+    clearStoredData("a");
+    expect(localStorage.getItem(`a.device.${KEY.slice(0, 16)}.42`)).toBeNull();
   });
 });

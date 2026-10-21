@@ -5,8 +5,10 @@ export { RemoteDesktop } from "./RemoteDesktop.js";
 export type { RemoteDesktopProps, RemoteDesktopCredentials } from "./RemoteDesktop.js";
 export { Toolbar, DEFAULT_PINNED_DESKTOP, DEFAULT_PINNED_TOUCH } from "./Toolbar.js";
 export type { ActionId, ToolbarAction, ToolbarProps } from "./Toolbar.js";
-export { SettingsSheet } from "./SettingsSheet.js";
-export type { SettingsSheetProps } from "./SettingsSheet.js";
+export { SettingsSheet, SettingsFields } from "./SettingsSheet.js";
+export type { SettingsSheetProps, SettingsFieldsProps } from "./SettingsSheet.js";
+export { ConnectionSettingsDialog } from "./ConnectionSettings.js";
+export type { ConnectionSettingsDialogProps } from "./ConnectionSettings.js";
 export { FilesSheet } from "./FilesSheet.js";
 export { RemoteTerminal } from "./RemoteTerminal.js";
 export { localShellStore } from "./shellStore.js";
@@ -22,13 +24,18 @@ export {
   pushRecent,
   loadPrefs,
   savePrefs,
+  loadDevicePrefs,
+  saveDevicePrefs,
+  withDevicePrefs,
+  devicePrefsOf,
+  DEVICE_SETTING_KEYS,
   loadRememberedHash,
   saveRememberedHash,
   hasRememberedHash,
   migrateStorage,
   clearStoredData,
 } from "./prefs.js";
-export type { RecentPeer, ViewPrefs, ToolbarPrefs, WebClientPrefs } from "./prefs.js";
+export type { RecentPeer, ViewPrefs, ToolbarPrefs, WebClientPrefs, DevicePrefs } from "./prefs.js";
 export { messages, createTranslator, resolveLang, I18nProvider, useI18n } from "./i18n/index.js";
 export type { Messages, Lang, DeepPartial, Translate, TranslateOptions, I18nValue } from "./i18n/index.js";
 export { cn } from "./lib/utils.js";

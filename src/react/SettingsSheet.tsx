@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
 import type { CodecPreference, ImageQualityPreset, InputMode, KeyboardModeName, PeerSummary, ScaleMode, SessionSettings } from "../index.js";
 
+import { RotateCcw } from "lucide-react";
+
 import { useI18n } from "./i18n/index.js";
+import { Button } from "./ui/button.js";
 import { Label } from "./ui/label.js";
 import { Separator, Switch } from "./ui/misc.js";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select.js";
@@ -27,6 +30,9 @@ export interface SettingsSheetProps {
   onBlockInput: (on: boolean) => void;
   canPrivacy: boolean;
   canBlockInput: boolean;
+  /** This device has settings of its own (not the defaults). */
+  ownSettings?: boolean;
+  onResetSettings?: () => void;
 }
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
@@ -93,114 +99,147 @@ function Slider({ label, value, min, max, step, unit, onChange }: { label: strin
   );
 }
 
-export function SettingsSheet(p: SettingsSheetProps) {
+/** The connection settings shared by a session's sheet and the defaults dialog. */
+export interface SettingsFieldsProps {
+  settings: SessionSettings;
+  onSettings: (patch: Partial<SessionSettings>) => void;
+  view: ViewPrefs;
+  inputMode: InputMode;
+  onView: (patch: Partial<ViewPrefs>) => void;
+  /** null: the defaults (no device): every codec is offered, 4:4:4 cannot be checked. */
+  peer: PeerSummary | null;
+  /** Session only: monitors, resolution, privacy, view only. */
+  session?: Omit<SettingsSheetProps, "open" | "onOpenChange" | "settings" | "onSettings" | "view" | "inputMode" | "onView" | "peer" | "ownSettings" | "onResetSettings">;
+}
+
+const ALL_CODEC_CHOICES = ["vp9", "av1", "h264", "h265", "vp8"] as const;
+
+export function SettingsFields(p: SettingsFieldsProps) {
   const { t } = useI18n();
   const s = p.settings;
-  const codecs = p.peer?.codecs ?? [];
-  const can444 = (p.peer?.codecs444.length ?? 0) > 0;
+  const sess = p.session;
+  const codecs: readonly string[] = p.peer ? p.peer.codecs : ALL_CODEC_CHOICES;
+  const can444 = p.peer ? p.peer.codecs444.length > 0 : true;
   const resolutions = p.peer?.resolutions ?? [];
   const displays = p.peer?.displays ?? [];
   const touch = p.inputMode !== "mouse";
+  return (
+    <>
+      <h3 className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("settings.display")}</h3>
+      {sess && displays.length > 1 && (
+        <Pick
+          label={t("settings.monitor")}
+          value={String(sess.currentDisplay)}
+          options={displays.map((d) => ({ value: String(d.index), label: `${d.index + 1}${d.name ? ` · ${d.name.replace(/^\\\\\.\\/, "")}` : ""} (${d.width}×${d.height})` }))}
+          onChange={(v) => sess.onSwitchDisplay(Number(v))}
+        />
+      )}
+      <Pick<ScaleMode>
+        label={t("settings.viewStyle")}
+        value={p.view.scaleMode}
+        options={[
+          { value: "fit", label: t("view.fit") },
+          { value: "original", label: t("view.original") },
+          { value: "stretch", label: t("view.stretch") },
+        ]}
+        onChange={(v) => p.onView({ scaleMode: v })}
+      />
+      <Pick<ImageQualityPreset>
+        label={t("settings.quality")}
+        value={s.imageQuality}
+        options={[
+          { value: "best", label: t("quality.best") },
+          { value: "balanced", label: t("quality.balanced") },
+          { value: "low", label: t("quality.low") },
+          { value: "custom", label: t("quality.custom") },
+        ]}
+        onChange={(v) => p.onSettings({ imageQuality: v })}
+      />
+      {s.imageQuality === "custom" && (
+        <div className="rounded-md border px-3 py-1">
+          <Slider label={t("settings.customQuality")} value={s.customQuality} min={10} max={100} step={5} unit="%" onChange={(v) => p.onSettings({ customQuality: v })} />
+          <Slider label={t("settings.customFps")} value={s.customFps} min={5} max={120} step={5} unit=" fps" onChange={(v) => p.onSettings({ customFps: v })} />
+        </div>
+      )}
+      <Pick<CodecPreference>
+        label={t("settings.codec")}
+        value={codecs.includes(s.codec as never) || s.codec === "auto" ? s.codec : "auto"}
+        options={[{ value: "auto", label: t("codec.auto") }, ...codecs.map((c) => ({ value: c as CodecPreference, label: c.toUpperCase() }))]}
+        onChange={(v) => p.onSettings({ codec: v })}
+      />
+      {sess && resolutions.length > 0 && (
+        <Pick
+          label={t("settings.resolution")}
+          value={sess.resolution}
+          options={[
+            { value: "current", label: t("settings.resolutionCurrent") },
+            { value: "0x0", label: t("settings.resolutionOriginal") },
+            ...resolutions.map((r) => ({ value: `${r.width}x${r.height}`, label: `${r.width}×${r.height}` })),
+          ]}
+          onChange={sess.onResolution}
+        />
+      )}
+      <Toggle label={t("settings.trueColor")} hint={can444 ? undefined : t("settings.trueColorUnavailable")} checked={s.trueColor} disabled={!can444 && !s.trueColor} onChange={(v) => p.onSettings({ trueColor: v })} />
+      <Toggle label={t("settings.showRemoteCursor")} checked={s.showRemoteCursor} onChange={(v) => p.onSettings({ showRemoteCursor: v })} />
+      <Toggle label={t("settings.zoomCursor")} checked={p.view.zoomCursor} onChange={(v) => p.onView({ zoomCursor: v })} />
+      <Toggle label={t("settings.followRemoteCursor")} checked={s.followRemoteCursor} onChange={(v) => p.onSettings({ followRemoteCursor: v })} />
+      <Toggle label={t("settings.followRemoteWindow")} checked={s.followRemoteWindow} onChange={(v) => p.onSettings({ followRemoteWindow: v })} />
+      <Toggle label={t("settings.showStats")} checked={p.view.showStats} onChange={(v) => p.onView({ showStats: v })} />
 
+      <Separator className="my-2" />
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("settings.control")}</h3>
+      <Pick<InputMode>
+        label={t("settings.inputMode")}
+        value={p.inputMode}
+        options={[
+          { value: "mouse", label: t("input.mouse") },
+          { value: "trackpad", label: t("input.trackpad") },
+          { value: "touch", label: t("input.touch") },
+        ]}
+        onChange={(v) => p.onView({ inputMode: v })}
+      />
+      {touch && <p className="pb-1 text-xs text-muted-foreground">{t(`input.${p.inputMode}Hint`)}</p>}
+      <Pick<KeyboardModeName>
+        label={t("settings.keyboardMode")}
+        value={s.keyboardMode}
+        options={[
+          { value: "map", label: t("keyboard.map") },
+          { value: "translate", label: t("keyboard.translate") },
+          { value: "legacy", label: t("keyboard.legacy") },
+        ]}
+        onChange={(v) => p.onSettings({ keyboardMode: v })}
+      />
+      <Toggle label={t("settings.swapCtrlMeta")} checked={s.swapCtrlMeta} onChange={(v) => p.onSettings({ swapCtrlMeta: v })} />
+      {sess && <Toggle label={t("settings.viewOnly")} checked={s.viewOnly} onChange={(v) => p.onSettings({ viewOnly: v })} />}
+      <Toggle label={t("settings.mute")} checked={s.disableAudio} onChange={(v) => p.onSettings({ disableAudio: v })} />
+      <Toggle label={t("settings.disableClipboard")} checked={s.disableClipboard} onChange={(v) => p.onSettings({ disableClipboard: v })} />
+      <Toggle label={t("settings.lockAfterSession")} checked={s.lockAfterSessionEnd} onChange={(v) => p.onSettings({ lockAfterSessionEnd: v })} />
+      {sess?.canPrivacy && <Toggle label={t("settings.privacyMode")} checked={sess.privacyOn} onChange={sess.onPrivacy} />}
+      {sess?.canBlockInput && <Toggle label={t("settings.blockInput")} checked={sess.blockInputOn} onChange={sess.onBlockInput} />}
+    </>
+  );
+}
+
+export function SettingsSheet(p: SettingsSheetProps) {
+  const { t } = useI18n();
+  const { open, onOpenChange, settings, onSettings, view, inputMode, onView, peer, ownSettings, onResetSettings, ...session } = p;
+  void open;
+  void onOpenChange;
   return (
     <Sheet open={p.open} onOpenChange={p.onOpenChange}>
       <SheetContent className="sm:max-w-sm" closeLabel={t("common.close")}>
         <SheetHeader>
           <SheetTitle>{t("settings.title")}</SheetTitle>
-          <SheetDescription className="sr-only">{t("settings.desc")}</SheetDescription>
+          <SheetDescription className="text-xs">{t(ownSettings ? "settings.deviceOwn" : "settings.deviceDefaults")}</SheetDescription>
         </SheetHeader>
         <SheetBody className="space-y-1">
-          <h3 className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("settings.display")}</h3>
-          {displays.length > 1 && (
-            <Pick
-              label={t("settings.monitor")}
-              value={String(p.currentDisplay)}
-              options={displays.map((d) => ({ value: String(d.index), label: `${d.index + 1}${d.name ? ` · ${d.name.replace(/^\\\\\.\\/, "")}` : ""} (${d.width}×${d.height})` }))}
-              onChange={(v) => p.onSwitchDisplay(Number(v))}
-            />
+          {ownSettings && onResetSettings && (
+            <Button variant="outline" size="sm" className="mb-1 w-full" onClick={onResetSettings}>
+              <RotateCcw className="mr-2 h-4 w-4" />
+              {t("settings.resetToDefaults")}
+            </Button>
           )}
-          <Pick<ScaleMode>
-            label={t("settings.viewStyle")}
-            value={p.view.scaleMode}
-            options={[
-              { value: "fit", label: t("view.fit") },
-              { value: "original", label: t("view.original") },
-              { value: "stretch", label: t("view.stretch") },
-            ]}
-            onChange={(v) => p.onView({ scaleMode: v })}
-          />
-          <Pick<ImageQualityPreset>
-            label={t("settings.quality")}
-            value={s.imageQuality}
-            options={[
-              { value: "best", label: t("quality.best") },
-              { value: "balanced", label: t("quality.balanced") },
-              { value: "low", label: t("quality.low") },
-              { value: "custom", label: t("quality.custom") },
-            ]}
-            onChange={(v) => p.onSettings({ imageQuality: v })}
-          />
-          {s.imageQuality === "custom" && (
-            <div className="rounded-md border px-3 py-1">
-              <Slider label={t("settings.customQuality")} value={s.customQuality} min={10} max={100} step={5} unit="%" onChange={(v) => p.onSettings({ customQuality: v })} />
-              <Slider label={t("settings.customFps")} value={s.customFps} min={5} max={120} step={5} unit=" fps" onChange={(v) => p.onSettings({ customFps: v })} />
-            </div>
-          )}
-          <Pick<CodecPreference>
-            label={t("settings.codec")}
-            value={codecs.includes(s.codec as never) || s.codec === "auto" ? s.codec : "auto"}
-            options={[{ value: "auto", label: t("codec.auto") }, ...codecs.map((c) => ({ value: c as CodecPreference, label: c.toUpperCase() }))]}
-            onChange={(v) => p.onSettings({ codec: v })}
-          />
-          {resolutions.length > 0 && (
-            <Pick
-              label={t("settings.resolution")}
-              value={p.resolution}
-              options={[
-                { value: "current", label: t("settings.resolutionCurrent") },
-                { value: "0x0", label: t("settings.resolutionOriginal") },
-                ...resolutions.map((r) => ({ value: `${r.width}x${r.height}`, label: `${r.width}×${r.height}` })),
-              ]}
-              onChange={p.onResolution}
-            />
-          )}
-          <Toggle label={t("settings.trueColor")} hint={can444 ? undefined : t("settings.trueColorUnavailable")} checked={s.trueColor} disabled={!can444 && !s.trueColor} onChange={(v) => p.onSettings({ trueColor: v })} />
-          <Toggle label={t("settings.showRemoteCursor")} checked={s.showRemoteCursor} onChange={(v) => p.onSettings({ showRemoteCursor: v })} />
-          <Toggle label={t("settings.zoomCursor")} checked={p.view.zoomCursor} onChange={(v) => p.onView({ zoomCursor: v })} />
-          <Toggle label={t("settings.followRemoteCursor")} checked={s.followRemoteCursor} onChange={(v) => p.onSettings({ followRemoteCursor: v })} />
-          <Toggle label={t("settings.followRemoteWindow")} checked={s.followRemoteWindow} onChange={(v) => p.onSettings({ followRemoteWindow: v })} />
-          <Toggle label={t("settings.showStats")} checked={p.view.showStats} onChange={(v) => p.onView({ showStats: v })} />
-
-          <Separator className="my-2" />
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("settings.control")}</h3>
-          <Pick<InputMode>
-            label={t("settings.inputMode")}
-            value={p.inputMode}
-            options={[
-              { value: "mouse", label: t("input.mouse") },
-              { value: "trackpad", label: t("input.trackpad") },
-              { value: "touch", label: t("input.touch") },
-            ]}
-            onChange={(v) => p.onView({ inputMode: v })}
-          />
-          {touch && <p className="pb-1 text-xs text-muted-foreground">{t(`input.${p.inputMode}Hint`)}</p>}
-          <Pick<KeyboardModeName>
-            label={t("settings.keyboardMode")}
-            value={s.keyboardMode}
-            options={[
-              { value: "map", label: t("keyboard.map") },
-              { value: "translate", label: t("keyboard.translate") },
-              { value: "legacy", label: t("keyboard.legacy") },
-            ]}
-            onChange={(v) => p.onSettings({ keyboardMode: v })}
-          />
-          <Toggle label={t("settings.swapCtrlMeta")} checked={s.swapCtrlMeta} onChange={(v) => p.onSettings({ swapCtrlMeta: v })} />
-          <Toggle label={t("settings.viewOnly")} checked={s.viewOnly} onChange={(v) => p.onSettings({ viewOnly: v })} />
-          <Toggle label={t("settings.mute")} checked={s.disableAudio} onChange={(v) => p.onSettings({ disableAudio: v })} />
-          <Toggle label={t("settings.disableClipboard")} checked={s.disableClipboard} onChange={(v) => p.onSettings({ disableClipboard: v })} />
-          <Toggle label={t("settings.lockAfterSession")} checked={s.lockAfterSessionEnd} onChange={(v) => p.onSettings({ lockAfterSessionEnd: v })} />
-          {p.canPrivacy && <Toggle label={t("settings.privacyMode")} checked={p.privacyOn} onChange={p.onPrivacy} />}
-          {p.canBlockInput && <Toggle label={t("settings.blockInput")} checked={p.blockInputOn} onChange={p.onBlockInput} />}
+          <SettingsFields settings={settings} onSettings={onSettings} view={view} inputMode={inputMode} onView={onView} peer={peer} session={session} />
         </SheetBody>
       </SheetContent>
     </Sheet>

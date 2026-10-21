@@ -186,8 +186,22 @@ or custom quality and frame rate, codec, remote resolution, true color
 remote cursor or window focus, quality monitor. Control: pointer input
 (mouse, touchpad, touch), keyboard mode (map, translate, legacy), swap
 Ctrl and Cmd/Win, view only, mute, clipboard, lock after the session ends,
-privacy mode and block user input. Settings are remembered per browser;
-view-only is per session and never restored.
+privacy mode and block user input.
+
+What a session changes is remembered for that device (like the desktop
+client's per-device settings); devices without settings of their own use the
+defaults, and the sheet's **Reset to the defaults** goes back to them. Only
+the differences are stored, so later changes to the defaults still reach every
+device that did not override them. Pointer input, the cursor scaling, the
+quality monitor and the toolbar are the same for every device; view only is
+per session and never restored. `ConnectionSettingsDialog` edits the defaults
+before connecting (the standalone app's **Connection settings**):
+
+```tsx
+import { ConnectionSettingsDialog } from "rdweb/react";
+
+<ConnectionSettingsDialog open={open} onOpenChange={setOpen} storageKey="rdweb" lang="ru" />;
+```
 
 ### Touch screens
 
@@ -334,7 +348,8 @@ Everything is under the `storageKey` prefix (default `rdweb`):
 
 | key | storage | description |
 |---|---|---|
-| `<prefix>.prefs` | localStorage | session settings, view and toolbar choices |
+| `<prefix>.prefs` | localStorage | the default connection settings, view and toolbar choices |
+| `<prefix>.device.<first 16 characters of the server key>.<device id>` | localStorage | a device's own settings (the differences from the defaults) |
 | `<prefix>.pw.<first 16 characters of the server key>.<device id>` | localStorage | a remembered password hash, base64 |
 | `<prefix>.recent` | localStorage | the last 8 devices connected to |
 | `<prefix>.files.localPane` | localStorage | the file manager's local pane is open |
@@ -343,9 +358,9 @@ Everything is under the `storageKey` prefix (default `rdweb`):
 | `<prefix>.terminal.shells.<server key>.<device id>` | localStorage | remembered shells (`localShellStore`) |
 | `<prefix>.terminal.service.<server key>.<device id>` | sessionStorage | the shells of this tab, for reconnects and reloads |
 
-`clearStoredData(storageKey)` removes the settings, remembered password
-hashes, recent devices and the local pane's state. It does not remove the
-terminal settings and remembered shells.
+`clearStoredData(storageKey)` removes all of it: the settings (default and
+per device), remembered password hashes, recent devices, the local pane's
+state, the terminal settings and the remembered shells.
 
 `storageKey: RDPANEL_STORAGE_KEY` (`"rdpanel.webclient"`) reads the data of RD
 Panel's own earlier web client as it is (the layout is the same) and removes
@@ -370,13 +385,15 @@ Russian plurals use `Intl.PluralRules`. There is no i18next dependency.
 |---|---|
 | `Toolbar`, `ToolbarAction`, `ActionId`, `ToolbarProps`, `DEFAULT_PINNED_DESKTOP`, `DEFAULT_PINNED_TOUCH` | the floating toolbar on its own |
 | `SettingsSheet`, `SettingsSheetProps` | the settings sheet, controlled by the host |
+| `SettingsFields`, `SettingsFieldsProps` | the sheet's settings, for a host's own dialog (`peer: null`: every codec, no session-only choices) |
+| `ConnectionSettingsDialog`, `ConnectionSettingsDialogProps` | the default connection settings dialog |
 | `FilesSheet`, `FilesSheetProps` | a complete file manager on its own `FileTransferSession`; `inline` renders it as a page instead of a side sheet |
 | `RemoteTerminal` | the terminal screen (`RemoteDesktopProps` plus a required `onReconnect`) |
 | `localShellStore`, `ShellStore`, `SavedShells` | see [Keeping shells](#keeping-shells) |
 | `Toaster` | a sonner toast host styled like shadcn/ui |
 | `ZipWriter`, `ZipTooLargeError`, `crc32` | the streaming zip writer used for folder downloads without a folder picker (stored, no ZIP64: up to 4 GiB) |
 | `formatSize(bytes, lang?)` | "512 B", "1.5 MB" |
-| `loadRecent`, `pushRecent`, `loadPrefs`, `savePrefs`, `loadRememberedHash`, `saveRememberedHash`, `hasRememberedHash`, `migrateStorage`, `clearStoredData`, `DEFAULT_STORAGE_KEY`, `RDPANEL_STORAGE_KEY` | the storage helpers above |
+| `loadRecent`, `pushRecent`, `loadPrefs`, `savePrefs`, `loadDevicePrefs`, `saveDevicePrefs`, `withDevicePrefs`, `devicePrefsOf`, `DEVICE_SETTING_KEYS`, `loadRememberedHash`, `saveRememberedHash`, `hasRememberedHash`, `migrateStorage`, `clearStoredData`, `DEFAULT_STORAGE_KEY`, `RDPANEL_STORAGE_KEY` | the storage helpers above |
 | `messages`, `createTranslator`, `resolveLang`, `I18nProvider`, `useI18n` | see [Translations](#translations) |
 | `cn` | merges Tailwind class names (the shadcn/ui helper) |
 

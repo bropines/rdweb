@@ -53,12 +53,16 @@ import { cn, SCOPE } from "./lib/utils.js";
 import {
   DEFAULT_STORAGE_KEY,
   hasRememberedHash,
+  devicePrefsOf,
+  loadDevicePrefs,
   loadPrefs,
   loadRememberedHash,
   migrateStorage,
   pushRecent,
   saveRememberedHash,
+  saveDevicePrefs,
   savePrefs,
+  withDevicePrefs,
   type ViewPrefs,
   type WebClientPrefs,
 } from "./prefs.js";
@@ -258,9 +262,10 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
   const rememberRef = useRef(false);
   const [loginHash, setLoginHash] = useState<Uint8Array | null>(null);
 
+  // the defaults with this device's own settings on top
   const [prefs, setPrefs] = useState<WebClientPrefs>(() => {
     migrateStorage(storageKey);
-    return loadPrefs(storageKey);
+    return withDevicePrefs(loadPrefs(storageKey), loadDevicePrefs(server.key, peerId, storageKey));
   });
   const [state, setState] = useState<SessionState>("idle");
   const [peer, setPeer] = useState<PeerSummary | null>(null);
@@ -296,7 +301,7 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
   useEffect(() => {
     const el = screenRef.current;
     if (!el) return;
-    const p = loadPrefs(storageKey);
+    const p = withDevicePrefs(loadPrefs(storageKey), loadDevicePrefs(server.key, peerId, storageKey));
     // Saved logins, in the desktop client's order: this browser's remembered
     // hash, the host's hash (personal address book), then the host's password.
     const localHash = loadRememberedHash(server.key, peerId, storageKey);
@@ -448,8 +453,14 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persist prefs
-  useEffect(() => savePrefs(prefs, storageKey), [prefs, storageKey]);
+  // Persist: what a session changes in the connection settings belongs to this
+  // device; the defaults stay; view (other than the scale) and toolbar are global.
+  useEffect(() => {
+    const defaults = loadPrefs(storageKey);
+    savePrefs({ settings: defaults.settings, view: { ...prefs.view, scaleMode: defaults.view.scaleMode }, toolbar: prefs.toolbar }, storageKey);
+    saveDevicePrefs(server.key, peerId, devicePrefsOf(defaults, prefs), storageKey);
+  }, [prefs, storageKey, server.key, peerId]);
+  const ownSettings = Object.keys(devicePrefsOf(loadPrefs(storageKey), prefs)).length > 0;
 
   // Follow the effective input mode (it depends on the device when unset).
   useEffect(() => {
@@ -470,6 +481,15 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
     sessionRef.current?.updateSettings(patch);
     setPrefs((p) => ({ ...p, settings: { ...p.settings, ...patch } }));
   }, []);
+
+  /** Back to the default connection settings for this device. */
+  const resetToDefaults = () => {
+    const d = loadPrefs(storageKey);
+    const settings = { ...d.settings, viewOnly: prefs.settings.viewOnly };
+    sessionRef.current?.updateSettings(settings);
+    viewerRef.current?.setScaleMode(d.view.scaleMode);
+    setPrefs((p) => ({ ...p, settings: { ...settings, viewOnly: p.settings.viewOnly }, view: { ...p.view, scaleMode: d.view.scaleMode } }));
+  };
 
   const updateView = useCallback((patch: Partial<ViewPrefs>) => {
     const v = viewerRef.current;
@@ -729,6 +749,8 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
         onOpenChange={setSettingsOpen}
         settings={prefs.settings}
         onSettings={updateSettings}
+        ownSettings={ownSettings}
+        onResetSettings={resetToDefaults}
         view={prefs.view}
         inputMode={inputMode}
         onView={updateView}

@@ -6,6 +6,7 @@ const en = {
   tagline: "Web remote desktop for RustDesk servers",
   language: "Language",
   theme: { label: "Theme", light: "Light", dark: "Dark", system: "System" },
+  defaults: { button: "Connection settings" },
   connect: {
     title: "Connect",
     server: "Server",
@@ -167,6 +168,7 @@ const ru: Messages = {
   tagline: "Веб-доступ к рабочему столу через серверы RustDesk",
   language: "Язык",
   theme: { label: "Тема", light: "Светлая", dark: "Тёмная", system: "Системная" },
+  defaults: { button: "Настройки подключения" },
   connect: {
     title: "Подключение",
     server: "Сервер",

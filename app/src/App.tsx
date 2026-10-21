@@ -1,7 +1,7 @@
-import { Download, FolderOpen, Info, Languages, Monitor, Moon, Pencil, Plus, Server, Stethoscope, Sun, SquareTerminal, Trash2 } from "lucide-react";
+import { Download, FolderOpen, Info, Languages, Monitor, Moon, Pencil, Plus, Server, SlidersHorizontal, Stethoscope, Sun, SquareTerminal, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { clearStoredData, RemoteDesktop, Toaster, type Lang } from "rdweb/react";
+import { clearStoredData, ConnectionSettingsDialog, RemoteDesktop, Toaster, type Lang } from "rdweb/react";
 import { Button } from "@ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@ui/dropdown-menu";
@@ -162,6 +162,7 @@ function Home(p: HomeProps) {
   const [editing, setEditing] = useState<Partial<ServerEntry> | null>(null);
   const [deleting, setDeleting] = useState<ServerEntry | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [defaultsOpen, setDefaultsOpen] = useState(false);
   const installState = useInstallState();
   const [installOpen, setInstallOpen] = useState(false);
   const [checking, setChecking] = useState<CheckTarget | null>(null);
@@ -240,6 +241,10 @@ function Home(p: HomeProps) {
               <span className="hidden sm:inline">{t("install.button")}</span>
             </Button>
           )}
+          <Button variant="ghost" size="sm" aria-label={t("defaults.button")} title={t("defaults.button")} onClick={() => setDefaultsOpen(true)}>
+            <SlidersHorizontal className="h-4 w-4" />
+            <span className="hidden sm:inline">{t("defaults.button")}</span>
+          </Button>
           <Button variant="ghost" size="icon" aria-label={t("about.title")} title={t("about.title")} onClick={() => setAboutOpen(true)}>
             <Info className="h-4 w-4" />
           </Button>
@@ -467,6 +472,7 @@ function Home(p: HomeProps) {
 
       <InstallDialog open={installOpen} onOpenChange={setInstallOpen} />
 
+      <ConnectionSettingsDialog open={defaultsOpen} onOpenChange={setDefaultsOpen} lang={p.lang} />
       <About
         open={aboutOpen}
         onOpenChange={setAboutOpen}
