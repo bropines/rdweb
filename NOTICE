@@ -16,7 +16,7 @@ dist/react/style.css is generated with Tailwind CSS and includes a scoped
 subset of its preflight (MIT, Tailwind Labs). The React UI was moved here
 from RD Panel (MIT, same authors).
 
-src/react/fonts/nerdSymbols.ts embeds "Symbols Nerd Font Mono" 3.5.1 from
+src/react/fonts/nerdSymbols.ts embeds "Symbols Nerd Font" 3.5.1 from
 Nerd Fonts (https://github.com/ryanoasis/nerd-fonts, MIT, Copyright (c) 2014
 Ryan L McIntyre), converted to WOFF2. Its icon sets keep their licenses, among
 them Font Awesome and Codicons (CC BY 4.0), Material Design Icons (Apache 2.0),
