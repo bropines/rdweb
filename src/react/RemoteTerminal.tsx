@@ -1,4 +1,4 @@
-import { ArrowDown, ChevronDown, ChevronLeft, ChevronUp, Plus, RefreshCw, Search, Settings2, X } from "lucide-react";
+import { ArrowDown, ChevronDown, ChevronLeft, ChevronUp, Keyboard, Plus, RefreshCw, Search, Settings2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { TerminalSession } from "../terminal.js";
@@ -16,6 +16,7 @@ import { Checkbox } from "./ui/misc.js";
 import { isModifier, modifyText, TERMINAL_LAYOUT, terminalKey, type TermMods } from "./keys.js";
 import { attachInstantInput } from "./instantInput.js";
 import { localShellStore, type SavedShells } from "./shellStore.js";
+import { cellAt, extendFrom, selectBetween, wordAt, type Cell } from "./touchSelect.js";
 import { useNoPullToRefresh, useVisualViewport } from "./viewport.js";
 import { XTERM_CSS } from "./xtermCss.js";
 
@@ -24,6 +25,7 @@ const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", 
 const MIN_FONT = 5;
 const MAX_FONT = 32;
 const RESIZE_SETTLE_MS = 150;
+const LONG_PRESS_MS = 450;
 
 const SYSTEM_MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
 const NERD_FAMILY = "rdweb Nerd Symbols";
@@ -148,6 +150,8 @@ type XtermLib = {
   SearchAddon: typeof import("@xterm/addon-search").SearchAddon;
   WebLinksAddon: typeof import("@xterm/addon-web-links").WebLinksAddon;
   Unicode11Addon: typeof import("@xterm/addon-unicode11").Unicode11Addon;
+  /** null when it failed to load: the DOM renderer. */
+  WebglAddon: typeof import("@xterm/addon-webgl").WebglAddon | null;
 };
 
 const SEARCH_DECORATIONS = {
@@ -215,6 +219,27 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [tabs, setTabs] = useState<Tab[]>([{ id: 0, exited: false }]);
+  // touch selection: a long press selects a word, dragging extends it; then a small menu
+  const [selMenu, setSelMenu] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const touchSelecting = useRef(false);
+  const lastTouch = useRef(0);
+  const keysStateKey = `${storageKey}.terminal.keys`;
+  const [keysHidden, setKeysHiddenRaw] = useState(() => {
+    try {
+      return localStorage.getItem(keysStateKey) === "hidden";
+    } catch {
+      return false;
+    }
+  });
+  const setKeysHidden = (hidden: boolean) => {
+    setKeysHiddenRaw(hidden);
+    try {
+      localStorage.setItem(keysStateKey, hidden ? "hidden" : "base");
+    } catch {
+      /* storage unavailable */
+    }
+  };
   const [active, setActive] = useState(0);
   const activeRef = useRef(0);
   const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
@@ -298,6 +323,17 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     term.unicode.activeVersion = "11";
     term.loadAddon(fit);
     term.open(el);
+    // WebGL draws box drawing, blocks and powerline glyphs itself, so frames
+    // and TUIs have no gaps whatever the font; without WebGL, the DOM renderer.
+    if (lib.WebglAddon) {
+      try {
+        const gl = new lib.WebglAddon();
+        gl.onContextLoss(() => gl.dispose());
+        term.loadAddon(gl);
+      } catch {
+        /* no WebGL here */
+      }
+    }
     fit.fit();
     term.onData((d) => {
       if (pane.replaying) return;
@@ -341,9 +377,18 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       return false;
     });
     term.onSelectionChange(() => {
-      if (prefsRef.current.copyOnSelect && term.hasSelection()) void navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
+      if (!term.hasSelection()) {
+        if (id === activeRef.current) setSelMenu(false);
+        return;
+      }
+      if (prefsRef.current.copyOnSelect && !touchSelecting.current) void navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
     });
     el.addEventListener("contextmenu", (e) => {
+      // a long press on a touch screen selects (see the touch handling), it does not paste
+      if ((e as PointerEvent).pointerType === "touch" || Date.now() - lastTouch.current < 1500) {
+        e.preventDefault();
+        return;
+      }
       if (!prefsRef.current.rightClickPaste) return;
       e.preventDefault();
       if (term.hasSelection()) {
@@ -370,17 +415,18 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     let opened = false;
     let ro: ResizeObserver | null = null;
     void (async () => {
-      const [{ Terminal }, { FitAddon }, { SearchAddon }, { WebLinksAddon }, { Unicode11Addon }] = await Promise.all([
+      const [{ Terminal }, { FitAddon }, { SearchAddon }, { WebLinksAddon }, { Unicode11Addon }, webgl] = await Promise.all([
         import("@xterm/xterm"),
         import("@xterm/addon-fit"),
         import("@xterm/addon-search"),
         import("@xterm/addon-web-links"),
         import("@xterm/addon-unicode11"),
+        import("@xterm/addon-webgl").catch(() => null),
       ]);
       if (prefsRef.current.nerdSymbols) await loadNerdSymbols();
       if (disposed) return;
       injectXtermCss();
-      libRef.current = { Terminal, FitAddon, SearchAddon, WebLinksAddon, Unicode11Addon };
+      libRef.current = { Terminal, FitAddon, SearchAddon, WebLinksAddon, Unicode11Addon, WebglAddon: webgl?.WebglAddon ?? null };
       const first = createPane(0);
       if (!first) return;
       // This tab's shells (reload, reconnect), else offer the device's remembered ones.
@@ -602,9 +648,17 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const setInstantInput = (pane: Pane, id: number, on: boolean) => {
     if (!touch || on === !!pane.detachInstant) return;
     if (on) {
-      pane.detachInstant = attachInstantInput(pane.term, (d) => {
-        if (!pane.replaying) sessRef.current?.write(applySticky(d), id);
-      });
+      pane.detachInstant = attachInstantInput(
+        pane.term,
+        (d) => {
+          if (!pane.replaying) sessRef.current?.write(applySticky(d), id);
+        },
+        // the keyboard's own cursor keys
+        (key) => {
+          const seq = terminalKey(key, takeSticky(), pane.term.modes.applicationCursorKeysMode);
+          if (seq !== null && !pane.replaying) sessRef.current?.write(seq, id);
+        },
+      );
     } else {
       pane.detachInstant?.();
       pane.detachInstant = undefined;
@@ -640,6 +694,13 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     let drag: { y: number; t: number; v: number } | null = null;
     let carry = 0; // pixels short of a whole line
     let fling = 0;
+    // long press: select the word under the finger, then follow it
+    let hold: { timer: ReturnType<typeof setTimeout>; x: number; y: number } | null = null;
+    let word: { start: Cell; end: Cell } | null = null;
+    const cancelHold = () => {
+      if (hold) clearTimeout(hold.timer);
+      hold = null;
+    };
     const dist = (t: TouchList) => Math.hypot(t[0]!.clientX - t[1]!.clientX, t[0]!.clientY - t[1]!.clientY);
     const scrollBy = (px: number, x: number, y: number) => {
       const term = panes.current.get(activeRef.current)?.term;
@@ -700,6 +761,28 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     const onStart = (e: TouchEvent) => {
       stopFling();
       follow(e.target);
+      lastTouch.current = Date.now();
+      cancelHold();
+      if (e.touches.length === 1) {
+        const t0 = e.touches[0]!;
+        const x = t0.clientX;
+        const y = t0.clientY;
+        hold = {
+          x,
+          y,
+          timer: setTimeout(() => {
+            hold = null;
+            const term = panes.current.get(activeRef.current)?.term;
+            if (!term) return;
+            drag = null;
+            word = wordAt(term, cellAt(term, x, y));
+            touchSelecting.current = true;
+            selectBetween(term, word.start, word.end);
+            setSelMenu(false);
+            navigator.vibrate?.(10);
+          }, LONG_PRESS_MS),
+        };
+      }
       if (e.touches.length === 2) {
         drag = null;
         pinch = { dist: dist(e.touches), size: prefsRef.current.fontSize };
@@ -720,6 +803,23 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         fitActive();
         return;
       }
+      if (word && e.touches.length === 1) {
+        e.preventDefault();
+        const term = panes.current.get(activeRef.current)?.term;
+        if (!term) return;
+        const t = e.touches[0]!;
+        // near the top or bottom edge, scroll to select beyond the screen
+        const r = areaRef.current?.getBoundingClientRect();
+        if (r && t.clientY < r.top + 24) term.scrollLines(-1);
+        else if (r && t.clientY > r.bottom - 24) term.scrollLines(1);
+        const [a, b] = extendFrom(word, cellAt(term, t.clientX, t.clientY));
+        selectBetween(term, a, b);
+        return;
+      }
+      if (hold && e.touches.length === 1) {
+        const t = e.touches[0]!;
+        if (Math.hypot(t.clientX - hold.x, t.clientY - hold.y) > 10) cancelHold();
+      }
       if (!drag || e.touches.length !== 1) return;
       e.preventDefault(); // no pull-to-refresh
       const t = e.touches[0]!;
@@ -739,6 +839,17 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       }
       if (e.touches.length > 0) return;
       unfollow();
+      cancelHold();
+      if (word) {
+        word = null;
+        touchSelecting.current = false;
+        const term = panes.current.get(activeRef.current)?.term;
+        if (term?.hasSelection()) {
+          if (prefsRef.current.copyOnSelect) void navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
+          setSelMenu(true);
+        }
+        return;
+      }
       if (drag) {
         const { v, t } = drag;
         drag = null;
@@ -750,9 +861,39 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     return () => {
       stopFling();
       unfollow();
+      cancelHold();
       el.removeEventListener("touchstart", onStart, { capture: true });
     };
   }, []);
+
+  /** The touch selection menu. */
+  const selAction = (action: "copy" | "paste" | "all" | "close") => {
+    const term = panes.current.get(activeRef.current)?.term;
+    if (!term) return;
+    if (action === "all") {
+      term.selectAll();
+      return;
+    }
+    if (action === "copy") {
+      const text = term.getSelection();
+      void navigator.clipboard?.writeText(text).then(
+        () => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        },
+        () => {},
+      );
+    } else if (action === "paste") {
+      void navigator.clipboard
+        ?.readText()
+        .then((text) => {
+          if (text) term.paste(text);
+        })
+        .catch(() => {});
+    }
+    term.clearSelection();
+    setSelMenu(false);
+  };
 
   /** A key from the extra keys bar: modifiers latch, the rest go to the active shell. */
   const extraKey = (id: string) => {
@@ -786,6 +927,19 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         <div className="min-w-0 flex-1 truncate text-sm font-medium">
           {t("terminal.title")} · {title}
         </div>
+        {touch && ready && keysHidden && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="text-white hover:bg-white/10 hover:text-white"
+            aria-label={t("terminal.keysShow")}
+            title={t("terminal.keysShow")}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setKeysHidden(false)}
+          >
+            <Keyboard className="h-5 w-5" />
+          </Button>
+        )}
         <Button size="icon" variant="ghost" className="text-white hover:bg-white/10 hover:text-white" aria-label={t("terminal.search")} title={`${t("terminal.search")} (${isMac ? "⌘F" : "Ctrl+Shift+F"})`} onClick={() => setSearchOpen((o) => !o)}>
           <Search className="h-5 w-5" />
         </Button>
@@ -882,6 +1036,33 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
               <X className="h-4 w-4" />
             </button>
           </form>
+        )}
+        {(selMenu || copied) && ready && (
+          <div
+            className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-md border border-white/15 bg-neutral-900/95 p-1 text-sm text-white shadow-lg"
+            role="toolbar"
+            aria-label={t("terminal.selection")}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            {copied ? (
+              <span className="px-2.5 py-1.5">{t("terminal.copied")}</span>
+            ) : (
+              <>
+                <button type="button" className="rounded px-2.5 py-1.5 hover:bg-white/10" onClick={() => selAction("copy")}>
+                  {t("terminal.copy")}
+                </button>
+                <button type="button" className="rounded px-2.5 py-1.5 hover:bg-white/10" onClick={() => selAction("paste")}>
+                  {t("terminal.paste")}
+                </button>
+                <button type="button" className="rounded px-2.5 py-1.5 hover:bg-white/10" onClick={() => selAction("all")}>
+                  {t("terminal.selectAll")}
+                </button>
+                <button type="button" className="rounded p-1.5 text-white/70 hover:bg-white/10" aria-label={t("common.close")} title={t("common.close")} onClick={() => selAction("close")}>
+                  <X className="h-4 w-4" />
+                </button>
+              </>
+            )}
+          </div>
         )}
         {scrolledUp && ready && (
           <Button
@@ -986,7 +1167,9 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
           lessLabel={t("terminal.keysLess")}
           hideHint={t("terminal.keysHide")}
           showLabel={t("terminal.keysShow")}
-          stateKey={`${storageKey}.terminal.keys`}
+          stateKey={keysStateKey}
+          hidden={keysHidden}
+          onHiddenChange={setKeysHidden}
         />
       )}
     </div>
