@@ -14,8 +14,9 @@
  * have something to delete, and the cursor keys of a keyboard's editing panel
  * all have somewhere to go (Yandex Keyboard sends nothing for → ↓ when the
  * caret is at the end). Those keys arrive as real key events and stay with
- * xterm; a caret the keyboard moves itself (to the start or the end, or by a
- * few characters) becomes Home, End or arrows.
+ * xterm, except Yandex's start/end keys, sent as Alt+Shift+↓/↑, which become
+ * Home and End; a caret the keyboard moves itself (to the start or the end,
+ * or by a few characters) becomes Home, End or arrows.
  *
  * The caret is read only after an edit (input, compositionend), never during
  * compositionupdate: Chrome selects the composed word for a moment before the
@@ -114,9 +115,17 @@ export function attachInstantInput(
   const onFocus = () => {
     if (ta.value === "") reset();
   };
-  // Keyboards report their keys as keyCode 229; xterm would diff the textarea itself.
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.keyCode === 229) own(e);
+    // Keyboards report their keys as keyCode 229; xterm would diff the textarea itself.
+    if (e.keyCode === 229) {
+      own(e);
+      return;
+    }
+    // Yandex Keyboard's start and end keys (|< >|) arrive as Alt+Shift+↓ and Alt+Shift+↑
+    if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && (e.key === "ArrowDown" || e.key === "ArrowUp") && own(e)) {
+      e.preventDefault();
+      sendKey(e.key === "ArrowDown" ? "home" : "end");
+    }
   };
   // The caret moved without an edit: the keyboard moved it itself.
   const onSelectionChange = () => {

@@ -92,6 +92,17 @@ describe("instant input", () => {
     expect(keys).toHaveLength(5);
   });
 
+  it("turns Yandex Keyboard's start and end keys into Home and End", () => {
+    const { textarea, keys, xterm } = setup();
+    const key = (k: string, mods: KeyboardEventInit) => textarea.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...mods }));
+    key("ArrowDown", { altKey: true, shiftKey: true }); // |<
+    key("ArrowUp", { altKey: true, shiftKey: true }); // >|
+    expect(keys).toEqual(["home", "end"]);
+    expect(xterm).not.toHaveBeenCalled();
+    key("ArrowUp", { altKey: true }); // a real Alt+↑ stays with xterm
+    expect(xterm).toHaveBeenCalledTimes(1);
+  });
+
   it("ignores the caret while a word is composed", () => {
     const { fire, compose, moveCaret, keys } = setup();
     fire("compositionstart");
