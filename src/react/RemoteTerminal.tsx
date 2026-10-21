@@ -1017,7 +1017,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
             ref={(el) => {
               if (el) hosts.current.set(tab.id, el);
             }}
-            className={cn("h-full w-full", tab.id !== active && "hidden")}
+            className={cn("isolate h-full w-full", tab.id !== active && "hidden")}
           />
         ))}
         {searchOpen && ready && (
