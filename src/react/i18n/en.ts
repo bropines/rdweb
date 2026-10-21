@@ -131,6 +131,9 @@ export const en = {
     legacy: "Legacy",
   },
   keys: {
+    bar: "Extra keys",
+    more: "More keys",
+    less: "Fewer keys",
     ControlLeft: "Ctrl",
     AltLeft: "Alt",
     MetaLeft: "Win",
@@ -182,6 +185,8 @@ export const en = {
     passwordDesc: "Enter the device password to open its terminal.",
     ended: "The terminal session ended: {{reason}}",
     keys: "Extra keys",
+    keysMore: "More keys",
+    keysLess: "Fewer keys",
     tab: "Shell {{n}}",
     tabs: "Terminals",
     newTab: "New terminal",

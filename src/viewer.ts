@@ -77,6 +77,7 @@ export class Viewer {
   private readonly surface: HTMLDivElement;
   private readonly cursorEl: HTMLDivElement;
   private readonly ime: HTMLTextAreaElement;
+  private softKeyHandler: ((input: string | { code: string; key: string }) => boolean) | null = null;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly unsub: (() => void)[] = [];
   private readonly ro: ResizeObserver;
@@ -257,6 +258,15 @@ export class Viewer {
 
   hideKeyboard(): void {
     this.ime.blur();
+  }
+
+  /**
+   * Sees what the on-screen keyboard types first: text, or Enter / Backspace
+   * / Delete as a key. Returning true consumes it, e.g. to press it with
+   * modifiers latched on an extra keys bar. null removes the handler.
+   */
+  setSoftKeyHandler(fn: ((input: string | { code: string; key: string }) => boolean) | null): void {
+    this.softKeyHandler = fn;
   }
 
   /** Fullscreen with keyboard lock (captures Esc, Alt+Tab, … where supported). */
@@ -965,7 +975,7 @@ export class Viewer {
     if (t === "insertCompositionText") return; // wait for compositionend
     e.preventDefault();
     if (t === "insertText" || t === "insertReplacementText") {
-      if (e.data) this.session.typeText(e.data);
+      if (e.data) this.softText(e.data);
     } else if (t === "insertLineBreak" || t === "insertParagraph") {
       this.tapKey("Enter", "Enter");
     } else if (t === "deleteContentBackward") {
@@ -977,11 +987,16 @@ export class Viewer {
   }
 
   private onCompositionEnd(e: CompositionEvent): void {
-    if (e.data) this.session.typeText(e.data);
+    if (e.data) this.softText(e.data);
     this.ime.value = "";
   }
 
+  private softText(text: string): void {
+    if (!this.softKeyHandler?.(text)) this.session.typeText(text);
+  }
+
   private tapKey(code: string, key: string): void {
+    if (this.softKeyHandler?.({ code, key })) return;
     this.session.key({ code, key, down: true });
     this.session.key({ code, key, down: false });
   }

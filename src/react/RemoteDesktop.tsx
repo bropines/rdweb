@@ -44,6 +44,7 @@ import {
   type SessionStats,
   type UploadItem,
 } from "../index.js";
+import { ExtraKeys } from "./ExtraKeys.js";
 import { droppedItems, FilesSheet } from "./FilesSheet.js";
 import { RemoteTerminal } from "./RemoteTerminal.js";
 import type { ShellStore } from "./shellStore.js";
@@ -61,8 +62,10 @@ import {
   type ViewPrefs,
   type WebClientPrefs,
 } from "./prefs.js";
+import { DESKTOP_KEYS, desktopLayout as layoutFor, isModifier, MODIFIER_CODES, physicalKey, type Modifier } from "./keys.js";
 import { SettingsSheet } from "./SettingsSheet.js";
 import { DEFAULT_PINNED_DESKTOP, DEFAULT_PINNED_TOUCH, Toolbar, type ToolbarAction } from "./Toolbar.js";
+import { useVisualViewport } from "./viewport.js";
 import { Button } from "./ui/button.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog.js";
 import { Input } from "./ui/input.js";
@@ -229,9 +232,6 @@ function settle(result: () => void | Promise<unknown>, onOk: () => void, onError
 
 type DialogName = "none" | "password" | "twoFactor" | "clipboard" | "type" | "chat" | "restart";
 
-const STICKY = ["ControlLeft", "AltLeft", "MetaLeft", "ShiftLeft"] as const;
-type Sticky = (typeof STICKY)[number];
-
 const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused"];
 
 function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) {
@@ -272,7 +272,10 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
   const [incoming, setIncoming] = useState<UploadItem[] | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [keyboardBar, setKeyboardBar] = useState(false);
-  const [sticky, setSticky] = useState<Set<Sticky>>(new Set());
+  // Ctrl / Alt / Win / Shift from the extra keys bar, pressed with the next key
+  const [sticky, setSticky] = useState<ReadonlySet<Modifier>>(new Set());
+  const stickyRef = useRef(sticky);
+  stickyRef.current = sticky;
   const [resolution, setResolution] = useState("current");
   const [privacyOn, setPrivacyOn] = useState(false);
   const [blockOn, setBlockOn] = useState(false);
@@ -314,6 +317,14 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
     });
     sessionRef.current = session;
     viewerRef.current = viewer;
+    // a latched Ctrl / Alt / Win goes with the next key typed on the phone keyboard
+    viewer.setSoftKeyHandler((input) => {
+      if (!stickyRef.current.size) return false;
+      const k = typeof input === "string" ? physicalKey(input) : input;
+      if (!k) return false;
+      pressSpecial(k.code, k.key);
+      return true;
+    });
     setAudioState(session.audioState);
     let audioBlockedShown = false;
     const forgetLocal = () => {
@@ -439,23 +450,8 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
     if (viewerRef.current && viewerRef.current.getInputMode() !== inputMode) viewerRef.current.setInputMode(inputMode);
   }, [inputMode]);
 
-  // Track the visual viewport so the screen stays above on-screen keyboards.
-  useEffect(() => {
-    const vv = window.visualViewport;
-    const shell = shellRef.current;
-    if (!vv || !shell) return;
-    const apply = () => {
-      shell.style.height = `${vv.height}px`;
-      shell.style.transform = `translateY(${vv.offsetTop}px)`;
-    };
-    apply();
-    vv.addEventListener("resize", apply);
-    vv.addEventListener("scroll", apply);
-    return () => {
-      vv.removeEventListener("resize", apply);
-      vv.removeEventListener("scroll", apply);
-    };
-  }, []);
+  // Keep the screen above on-screen keyboards.
+  useVisualViewport(shellRef);
 
   useEffect(() => {
     const onFs = () => setFullscreen(!!document.fullscreenElement);
@@ -482,30 +478,41 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
   const connected = state === "connected";
   const busy = !closed && !error && !connected;
 
+  /** Presses a key with the latched modifiers, then releases them. */
   const pressSpecial = (code: string, key: string) => {
     const sess = sessionRef.current;
     if (!sess) return;
-    const mods = [...sticky];
+    const mods = [...stickyRef.current].map((m) => MODIFIER_CODES[m]);
     for (const m of mods) sess.key({ code: m, key: "", down: true });
     sess.key({ code, key, down: true });
     sess.key({ code, key, down: false });
     for (const m of mods.reverse()) sess.key({ code: m, key: "", down: false });
-    if (mods.length) setSticky(new Set());
+    if (mods.length) {
+      stickyRef.current = new Set();
+      setSticky(stickyRef.current);
+    }
   };
 
-  const toggleSticky = (m: Sticky) =>
-    setSticky((prev) => {
-      const next = new Set(prev);
-      if (next.has(m)) next.delete(m);
-      else next.add(m);
-      return next;
-    });
+  const extraKey = (id: string) => {
+    if (isModifier(id)) {
+      setSticky((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+      return;
+    }
+    const k = DESKTOP_KEYS[id];
+    if (k) pressSpecial(k.code, k.key);
+  };
 
   // Our own disconnects are not worth a raw (English) reason.
   const closedText = closed ? (closed.remote ? closed.reason : t("state.closed")) : "";
   const statusText = error ? error : closed ? closedText : t(`state.${state}`, { defaultValue: state });
 
   const title = peer?.hostname || peerId;
+  const desktopLayout = layoutFor(peer?.os);
 
   const displays = peer?.displays ?? [];
   const screenshot = () =>
@@ -684,27 +691,15 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
 
       {/* extra keys for on-screen keyboards */}
       {connected && touch && keyboardBar && (
-        <div className="flex shrink-0 gap-1 overflow-x-auto border-t border-white/10 bg-neutral-900 px-1.5 py-1">
-          {STICKY.map((m) => (
-            <KeyBtn key={m} active={sticky.has(m)} onClick={() => toggleSticky(m)}>
-              {t(`keys.${m}`)}
-            </KeyBtn>
-          ))}
-          <KeyBtn onClick={() => pressSpecial("Escape", "Escape")}>Esc</KeyBtn>
-          <KeyBtn onClick={() => pressSpecial("Tab", "Tab")}>Tab</KeyBtn>
-          <KeyBtn onClick={() => pressSpecial("ArrowLeft", "ArrowLeft")}>←</KeyBtn>
-          <KeyBtn onClick={() => pressSpecial("ArrowUp", "ArrowUp")}>↑</KeyBtn>
-          <KeyBtn onClick={() => pressSpecial("ArrowDown", "ArrowDown")}>↓</KeyBtn>
-          <KeyBtn onClick={() => pressSpecial("ArrowRight", "ArrowRight")}>→</KeyBtn>
-          <KeyBtn onClick={() => pressSpecial("Delete", "Delete")}>Del</KeyBtn>
-          <KeyBtn onClick={() => pressSpecial("Home", "Home")}>Home</KeyBtn>
-          <KeyBtn onClick={() => pressSpecial("End", "End")}>End</KeyBtn>
-          {["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"].map((f) => (
-            <KeyBtn key={f} onClick={() => pressSpecial(f, f)}>
-              {f}
-            </KeyBtn>
-          ))}
-        </div>
+        <ExtraKeys
+          base={desktopLayout.base}
+          more={desktopLayout.more}
+          latched={sticky}
+          onKey={extraKey}
+          label={t("keys.bar")}
+          moreLabel={t("keys.more")}
+          lessLabel={t("keys.less")}
+        />
       )}
 
       <FilesSheet
@@ -826,23 +821,6 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function KeyBtn({ children, onClick, active }: { children: ReactNode; onClick: () => void; active?: boolean }) {
-  return (
-    <button
-      type="button"
-      // keep focus (and the on-screen keyboard) on the input
-      onPointerDown={(e) => e.preventDefault()}
-      onClick={onClick}
-      className={cn(
-        "h-8 shrink-0 rounded border border-white/15 px-2.5 text-xs text-white/90 active:bg-white/20",
-        active ? "bg-white/25" : "bg-white/5",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 

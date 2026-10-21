@@ -311,6 +311,7 @@ long press right-clicks, two fingers scroll and pinch zooms.
 | `getZoom()`, `resetZoom()` | pinch zoom (touch modes) |
 | `focus()` | capture the keyboard |
 | `showKeyboard()`, `hideKeyboard()` | the on-screen keyboard on touch devices |
+| `setSoftKeyHandler(fn \| null)` | sees on-screen keyboard input first (text, or Enter / Backspace / Delete as `{ code, key }`); returning `true` consumes it, e.g. to press it with modifiers latched on your own keys bar |
 | `enterFullscreen(el?)`, `exitFullscreen()` | fullscreen with keyboard lock where supported (Esc, Alt+Tab go to the device) |
 | `screenshot(): Promise<Blob \| null>` | the current frame as PNG |
 | `destroy()` | release input, remove the elements and the frame sink |

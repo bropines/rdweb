@@ -54,8 +54,8 @@ with WebCodecs. It is three things:
 - Quality presets or custom quality and frame rate, remote resolution,
   several monitors, fit / 1:1 / stretch.
 - Mouse, wheel and smooth touchpad scrolling. Touch screens work as a
-  touchpad or as direct touch, with pinch zoom and an extra keys row for
-  on-screen keyboards.
+  touchpad or as direct touch, with pinch zoom and Termux-style extra keys
+  for on-screen keyboards (two rows, more layers behind the pinned ▲ key).
 - Keyboard in Map (physical keys), Translate (local layout) or Legacy mode,
   IME input, Ctrl+Alt+Del, lock screen, fullscreen with keyboard lock.
 - Clipboard text both ways, Opus audio, chat, screenshots. Pasting or
