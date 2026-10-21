@@ -14,8 +14,9 @@ import { Input } from "./ui/input.js";
 import { Label } from "./ui/label.js";
 import { Checkbox } from "./ui/misc.js";
 import { isModifier, modifyText, TERMINAL_LAYOUT, terminalKey, type TermMods } from "./keys.js";
+import { attachInstantInput } from "./instantInput.js";
 import { localShellStore, type SavedShells } from "./shellStore.js";
-import { useVisualViewport } from "./viewport.js";
+import { useNoPullToRefresh, useVisualViewport } from "./viewport.js";
 import { XTERM_CSS } from "./xtermCss.js";
 
 const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused"];
@@ -38,6 +39,8 @@ export interface TerminalPrefs {
   rightClickPaste: boolean;
   /** macOS: Option works as Alt/Meta (Option+M sends Alt+M) instead of typing special characters. */
   optionAsAlt: boolean;
+  /** Touch screens: send each letter as it is typed, not a whole word once the keyboard commits it. */
+  instantInput: boolean;
 }
 
 const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
@@ -48,6 +51,7 @@ const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
   copyOnSelect: true,
   rightClickPaste: true,
   optionAsAlt: true,
+  instantInput: true,
 };
 
 function loadTerminalPrefs(storageKey: string): TerminalPrefs {
@@ -62,6 +66,7 @@ function loadTerminalPrefs(storageKey: string): TerminalPrefs {
       copyOnSelect: v.copyOnSelect !== false,
       rightClickPaste: v.rightClickPaste !== false,
       optionAsAlt: v.optionAsAlt !== false,
+      instantInput: v.instantInput !== false,
     };
   } catch {
     return { ...DEFAULT_TERMINAL_PREFS };
@@ -148,6 +153,7 @@ const SEARCH_DECORATIONS = {
   activeMatchColorOverviewRuler: "#fbbf24",
 };
 
+const isTouch = () => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 /** Opens http(s) links from the terminal in a new tab (nothing else). */
@@ -166,6 +172,8 @@ interface Pane {
   search: import("@xterm/addon-search").SearchAddon;
   /** While replayed output is parsed: xterm's answers to queries in it are not sent. */
   replaying: boolean;
+  /** Removes instant input (see attachInstantInput). */
+  detachInstant?: () => void;
 }
 
 interface Tab {
@@ -273,6 +281,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       if (pane.replaying) return;
       sessRef.current?.write(applySticky(d), id);
     });
+    setInstantInput(pane, id, prefsRef.current.instantInput);
     // Shift+PageUp/PageDown/Home/End page through the scrollback (like most terminals)
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown") return true;
@@ -565,57 +574,142 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     p?.term.focus();
   };
 
+  /** On touch screens, letters typed on the on-screen keyboard go out one by one. */
+  const setInstantInput = (pane: Pane, id: number, on: boolean) => {
+    if (!touch || on === !!pane.detachInstant) return;
+    if (on) {
+      pane.detachInstant = attachInstantInput(pane.term, (d) => {
+        if (!pane.replaying) sessRef.current?.write(applySticky(d), id);
+      });
+    } else {
+      pane.detachInstant?.();
+      pane.detachInstant = undefined;
+    }
+  };
+
   const applyPrefs = async (next: TerminalPrefs) => {
     setPrefs(next);
     prefsRef.current = next;
     saveTerminalPrefs(storageKey, next);
     if (next.nerdSymbols) await loadNerdSymbols();
-    for (const p of panes.current.values()) {
+    for (const [id, p] of panes.current) {
       p.term.options.fontFamily = fontStack(next);
       p.term.options.fontSize = next.fontSize;
       p.term.options.macOptionIsMeta = next.optionAsAlt;
+      setInstantInput(p, id, next.instantInput);
     }
     fitActive();
   };
 
-  // Pinch with two fingers on the terminal: font size follows, saved on release.
+  // Touch on the terminal. One finger scrolls, with momentum: the scrollback,
+  // or (when the program reads the mouse or uses the alternate screen) the
+  // program, as a mouse wheel would. Two fingers pinch the font size, saved
+  // on release. Every move is ours, so the page never pulls to refresh.
   const applyRef = useRef(applyPrefs);
   applyRef.current = applyPrefs;
+  useNoPullToRefresh();
   useEffect(() => {
     const el = areaRef.current;
     if (!el) return;
-    let start: { dist: number; size: number } | null = null;
+    let pinch: { dist: number; size: number } | null = null;
     let size = 0;
+    let drag: { y: number; t: number; v: number } | null = null;
+    let carry = 0; // pixels short of a whole line
+    let fling = 0;
     const dist = (t: TouchList) => Math.hypot(t[0]!.clientX - t[1]!.clientX, t[0]!.clientY - t[1]!.clientY);
+    const scrollBy = (px: number, x: number, y: number) => {
+      const term = panes.current.get(activeRef.current)?.term;
+      if (!term || !px) return;
+      if (term.modes.mouseTrackingMode !== "none" || term.buffer.active.type === "alternate") {
+        term.element
+          ?.querySelector(".xterm-screen")
+          ?.dispatchEvent(new WheelEvent("wheel", { deltaY: px, deltaMode: 0, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+        return;
+      }
+      const cell = (term.element?.querySelector(".xterm-screen")?.clientHeight ?? 0) / term.rows || 16;
+      carry += px;
+      const lines = Math.trunc(carry / cell);
+      if (lines) {
+        carry -= lines * cell;
+        term.scrollLines(lines);
+      }
+    };
+    const stopFling = () => {
+      if (fling) cancelAnimationFrame(fling);
+      fling = 0;
+    };
+    const startFling = (velocity: number, x: number, y: number) => {
+      let v = velocity; // px per ms
+      let last = performance.now();
+      const step = (now: number) => {
+        const dt = Math.min(50, now - last);
+        last = now;
+        v *= Math.pow(0.995, dt);
+        if (Math.abs(v) < 0.05) {
+          fling = 0;
+          return;
+        }
+        scrollBy(v * dt, x, y);
+        fling = requestAnimationFrame(step);
+      };
+      fling = requestAnimationFrame(step);
+    };
     const onStart = (e: TouchEvent) => {
-      if (e.touches.length !== 2) return;
-      start = { dist: dist(e.touches), size: prefsRef.current.fontSize };
-      size = start.size;
+      stopFling();
+      if (e.touches.length === 2) {
+        drag = null;
+        pinch = { dist: dist(e.touches), size: prefsRef.current.fontSize };
+        size = pinch.size;
+      } else if (e.touches.length === 1) {
+        drag = { y: e.touches[0]!.clientY, t: e.timeStamp, v: 0 };
+        carry = 0;
+      }
     };
     const onMove = (e: TouchEvent) => {
-      if (!start || e.touches.length !== 2) return;
-      e.preventDefault(); // no page zoom, no scrolling while pinching
-      const next = Math.min(32, Math.max(8, Math.round(start.size * (dist(e.touches) / start.dist))));
-      if (next === size) return;
-      size = next;
-      for (const p of panes.current.values()) p.term.options.fontSize = next;
-      fitActive();
+      if (pinch && e.touches.length === 2) {
+        e.preventDefault(); // no page zoom, no scrolling while pinching
+        const next = Math.min(32, Math.max(8, Math.round(pinch.size * (dist(e.touches) / pinch.dist))));
+        if (next === size) return;
+        size = next;
+        for (const p of panes.current.values()) p.term.options.fontSize = next;
+        fitActive();
+        return;
+      }
+      if (!drag || e.touches.length !== 1) return;
+      e.preventDefault(); // no pull-to-refresh
+      e.stopPropagation(); // xterm would scroll as well
+      const t = e.touches[0]!;
+      const dy = drag.y - t.clientY;
+      const dt = Math.max(1, e.timeStamp - drag.t);
+      drag.v = 0.8 * (dy / dt) + 0.2 * drag.v;
+      drag.y = t.clientY;
+      drag.t = e.timeStamp;
+      scrollBy(dy, t.clientX, t.clientY);
     };
     const onEnd = (e: TouchEvent) => {
-      if (!start || e.touches.length >= 2) return;
-      const changed = size !== start.size;
-      start = null;
-      if (changed) void applyRef.current({ ...prefsRef.current, fontSize: size });
+      if (pinch && e.touches.length < 2) {
+        const changed = size !== pinch.size;
+        pinch = null;
+        if (changed) void applyRef.current({ ...prefsRef.current, fontSize: size });
+      }
+      if (drag && e.touches.length === 0) {
+        const { v, t } = drag;
+        drag = null;
+        const p = e.changedTouches[0];
+        if (e.type === "touchend" && p && e.timeStamp - t < 100 && Math.abs(v) > 0.3) startFling(v, p.clientX, p.clientY);
+      }
     };
-    el.addEventListener("touchstart", onStart, { passive: true });
-    el.addEventListener("touchmove", onMove, { passive: false });
-    el.addEventListener("touchend", onEnd, { passive: true });
-    el.addEventListener("touchcancel", onEnd, { passive: true });
+    // capture: before xterm's own touch scrolling on the elements inside
+    el.addEventListener("touchstart", onStart, { passive: true, capture: true });
+    el.addEventListener("touchmove", onMove, { passive: false, capture: true });
+    el.addEventListener("touchend", onEnd, { passive: true, capture: true });
+    el.addEventListener("touchcancel", onEnd, { passive: true, capture: true });
     return () => {
-      el.removeEventListener("touchstart", onStart);
-      el.removeEventListener("touchmove", onMove);
-      el.removeEventListener("touchend", onEnd);
-      el.removeEventListener("touchcancel", onEnd);
+      stopFling();
+      el.removeEventListener("touchstart", onStart, { capture: true });
+      el.removeEventListener("touchmove", onMove, { capture: true });
+      el.removeEventListener("touchend", onEnd, { capture: true });
+      el.removeEventListener("touchcancel", onEnd, { capture: true });
     };
   }, []);
 
@@ -849,6 +943,9 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
           label={t("terminal.keys")}
           moreLabel={t("terminal.keysMore")}
           lessLabel={t("terminal.keysLess")}
+          hideHint={t("terminal.keysHide")}
+          showLabel={t("terminal.keysShow")}
+          stateKey={`${storageKey}.terminal.keys`}
         />
       )}
     </div>
@@ -918,6 +1015,15 @@ function TerminalSettings({
               <span className="block text-xs text-muted-foreground">{t("terminal.nerdSymbolsHint")}</span>
             </span>
           </label>
+          {isTouch() && (
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox checked={draft.instantInput} onCheckedChange={(v) => setDraft({ ...draft, instantInput: v === true })} className="mt-0.5" />
+              <span>
+                {t("terminal.instantInput")}
+                <span className="block text-xs text-muted-foreground">{t("terminal.instantInputHint")}</span>
+              </span>
+            </label>
+          )}
           {isMac && (
             <label className="flex items-start gap-2 text-sm">
               <Checkbox checked={draft.optionAsAlt} onCheckedChange={(v) => setDraft({ ...draft, optionAsAlt: v === true })} className="mt-0.5" />

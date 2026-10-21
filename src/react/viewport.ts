@@ -23,3 +23,17 @@ export function useVisualViewport(ref: RefObject<HTMLElement | null>): void {
     };
   }, [ref]);
 }
+
+/**
+ * Turns off the browser's pull-to-refresh and overscroll bounce while the
+ * component is mounted: a downward swipe in a full-screen session must not
+ * reload the page.
+ */
+export function useNoPullToRefresh(): void {
+  useEffect(() => {
+    const els = [document.documentElement, document.body];
+    const before = els.map((el) => el.style.overscrollBehavior);
+    for (const el of els) el.style.overscrollBehavior = "none";
+    return () => els.forEach((el, i) => (el.style.overscrollBehavior = before[i] ?? ""));
+  }, []);
+}

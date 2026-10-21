@@ -159,6 +159,7 @@ export function clearStoredData(storageKey: string = DEFAULT_STORAGE_KEY): void 
       key.startsWith(k.pw) ||
       key === k.recent ||
       key === k.prefs ||
+      key === `${storageKey}.keys` || // the extra keys bar: layers open or hidden
       // terminal settings and remembered shells (<key>.terminal, <key>.terminal.shells.*)
       key === `${storageKey}.terminal` ||
       key.startsWith(`${storageKey}.terminal.`) ||

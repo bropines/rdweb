@@ -23,6 +23,11 @@ export interface ExtraKeysProps {
   label: string;
   moreLabel: string;
   lessLabel: string;
+  /** Title of the pinned key and of the button that brings the hidden bar back. */
+  hideHint?: string;
+  showLabel?: string;
+  /** localStorage key for whether the layers are open or the bar hidden. */
+  stateKey?: string;
   /** Accessible names for keys drawn as icons (arrows, backspace), by id. */
   names?: Record<string, string>;
   className?: string;
@@ -34,8 +39,28 @@ export interface ExtraKeysProps {
  * held. The bar never takes the focus, so the keyboard stays open, and does
  * not let a long press select text.
  */
+type BarState = "base" | "more" | "hidden";
+
+function loadState(key?: string): BarState {
+  try {
+    const v = key ? localStorage.getItem(key) : null;
+    return v === "more" || v === "hidden" ? v : "base";
+  } catch {
+    return "base";
+  }
+}
+
 export function ExtraKeys(props: ExtraKeysProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [state, setStateRaw] = useState<BarState>(() => loadState(props.stateKey));
+  const setState = (next: BarState) => {
+    setStateRaw(next);
+    try {
+      if (props.stateKey) localStorage.setItem(props.stateKey, next);
+    } catch {
+      /* storage unavailable */
+    }
+  };
+  const expanded = state === "more";
   const [pressed, setPressed] = useState<string | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -60,7 +85,7 @@ export function ExtraKeys(props: ExtraKeysProps) {
     const block = (e: TouchEvent) => e.preventDefault();
     el.addEventListener("touchstart", block, { passive: false });
     return () => el.removeEventListener("touchstart", block);
-  }, []);
+  }, [state]);
 
   const down = (e: ReactPointerEvent<HTMLButtonElement>, def: KeyDef) => {
     e.preventDefault();
@@ -87,7 +112,8 @@ export function ExtraKeys(props: ExtraKeysProps) {
     stopRepeat();
     if (!p || p.id !== def.id || p.pointer !== e.pointerId || def.repeat) return;
     if (def.id === MORE) {
-      setExpanded((x) => !x);
+      // tap: the layers on/off; swipe down: hide the whole bar
+      setState(e.clientY - p.y >= SWIPE_UP_PX ? "hidden" : expanded ? "base" : "more");
       return;
     }
     onKeyRef.current(def.popup && p.y - e.clientY >= SWIPE_UP_PX ? def.popup : def.id);
@@ -98,6 +124,25 @@ export function ExtraKeys(props: ExtraKeysProps) {
     setPressed(null);
     stopRepeat();
   };
+
+  if (state === "hidden") {
+    return (
+      <div className="relative h-0 shrink-0">
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={props.showLabel ?? props.moreLabel}
+          title={props.showLabel ?? props.moreLabel}
+          className="absolute bottom-2 right-2 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-neutral-900/80 text-white shadow-lg"
+          onMouseDown={(e) => e.preventDefault()}
+          onPointerDown={(e) => e.preventDefault()}
+          onClick={() => setState("base")}
+        >
+          <ChevronUp className="h-5 w-5" />
+        </button>
+      </div>
+    );
+  }
 
   const rows = expanded ? [...props.more, ...props.base] : props.base;
   return (
@@ -116,13 +161,14 @@ export function ExtraKeys(props: ExtraKeysProps) {
             const text = def.label ?? def.id;
             const Icon = more ? (expanded ? ChevronDown : ChevronUp) : ICONS[text];
             const label = more ? (expanded ? props.lessLabel : props.moreLabel) : Icon ? (props.names?.[def.id] ?? text) : undefined;
+            const title = more && props.hideHint ? `${label} · ${props.hideHint}` : label;
             return (
               <button
                 key={def.id}
                 type="button"
                 tabIndex={-1}
                 aria-label={label}
-                title={label}
+                title={title}
                 aria-pressed={more || isModifier(def.id) ? on : undefined}
                 className={cn(
                   "relative flex h-11 min-w-0 flex-1 items-center justify-center rounded-md font-mono text-white outline-none",
@@ -135,6 +181,7 @@ export function ExtraKeys(props: ExtraKeysProps) {
                 onPointerCancel={cancel}
               >
                 {Icon ? <Icon className="h-5 w-5" /> : text}
+                {more && !expanded && <ChevronDown aria-hidden className="pointer-events-none absolute bottom-0.5 right-1 h-2.5 w-2.5 text-white/40" />}
                 {def.popup && <span aria-hidden className="pointer-events-none absolute right-1 top-0.5 text-[9px] leading-none text-white/45">{def.popup}</span>}
               </button>
             );
