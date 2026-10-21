@@ -154,6 +154,24 @@ export function migrateStorage(storageKey: string = DEFAULT_STORAGE_KEY): void {
 /** Forgets everything stored under this prefix in this browser. */
 export function clearStoredData(storageKey: string = DEFAULT_STORAGE_KEY): void {
   const k = keys(storageKey);
-  removeWhere((key) => key.startsWith(k.pw) || key === k.recent || key === k.prefs || (storageKey === RDPANEL_STORAGE_KEY && isRdpanelLegacyKey(key)));
+  removeWhere(
+    (key) =>
+      key.startsWith(k.pw) ||
+      key === k.recent ||
+      key === k.prefs ||
+      // terminal settings and remembered shells (<key>.terminal, <key>.terminal.shells.*)
+      key === `${storageKey}.terminal` ||
+      key.startsWith(`${storageKey}.terminal.`) ||
+      (storageKey === RDPANEL_STORAGE_KEY && isRdpanelLegacyKey(key)),
+  );
+  // this tab's reattach ids (<key>.terminal.service.*)
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith(`${storageKey}.terminal.`)) sessionStorage.removeItem(key);
+    }
+  } catch {
+    /* storage unavailable */
+  }
   clearLocalFolderData(storageKey);
 }
