@@ -83,4 +83,16 @@ describe("prefs storage", () => {
     expect(loadRecent("a")).toEqual([]);
     expect(hasRememberedHash(KEY, "1", "b")).toBe(true);
   });
+
+  it("clears terminal settings and remembered shells too", () => {
+    localStorage.setItem("a.terminal", "{}");
+    localStorage.setItem("a.terminal.shells.K.1", "[]");
+    localStorage.setItem("b.terminal", "{}");
+    sessionStorage.setItem("a.terminal.service.K.1", "svc");
+    clearStoredData("a");
+    expect(localStorage.getItem("a.terminal")).toBeNull();
+    expect(localStorage.getItem("a.terminal.shells.K.1")).toBeNull();
+    expect(sessionStorage.getItem("a.terminal.service.K.1")).toBeNull();
+    expect(localStorage.getItem("b.terminal")).toBe("{}");
+  });
 });
