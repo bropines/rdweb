@@ -28,6 +28,7 @@ import {
   FileTransferError,
   FileTransferSession,
   type ConflictAnswer,
+  type FilePeerSummary,
   type RemoteEntry,
   type ServerConfig,
   type TransferProgress,
@@ -74,6 +75,8 @@ export interface FilesSheetProps {
   onBack?: () => void;
   /** Inline mode: device name or id in the header. */
   title?: string;
+  /** The file transfer connection is up. */
+  onConnected?(peer: FilePeerSummary): void;
   /** Files to upload into the current folder once connected (pasted or dropped on the screen). */
   incoming?: UploadItem[] | null;
   onIncomingDone?: () => void;
@@ -248,6 +251,8 @@ export function FilesSheet(p: FilesSheetProps) {
     ft.on("waitingForApproval", () => setConn("waiting"));
     ft.on("connected", ({ home }) => {
       setConn("ready");
+      const peer = ft.peer;
+      if (peer) p.onConnected?.(peer);
       if (home) {
         setCwd(home.path);
         setPathInput(home.path);

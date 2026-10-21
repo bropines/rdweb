@@ -63,6 +63,7 @@ import {
   type WebClientPrefs,
 } from "./prefs.js";
 import { DESKTOP_KEYS, desktopLayout as layoutFor, isModifier, MODIFIER_CODES, physicalKey, type Modifier } from "./keys.js";
+import { screenlessPeer } from "./peerSummary.js";
 import { SettingsSheet } from "./SettingsSheet.js";
 import { DEFAULT_PINNED_DESKTOP, DEFAULT_PINNED_TOUCH, Toolbar, type ToolbarAction } from "./Toolbar.js";
 import { useNoPullToRefresh, useVisualViewport } from "./viewport.js";
@@ -115,7 +116,7 @@ export interface RemoteDesktopProps {
   onRemembered?(hash: Uint8Array): void | Promise<unknown>;
   /** The saved password should be forgotten (see `RemoteDesktopCredentials.fromPersonalBook`). */
   onForget?(): void | Promise<unknown>;
-  /** The session is up. */
+  /** The session is up (in the Files only and Terminal modes the display, codec and session fields are empty). */
   onConnected?(peer: PeerSummary): void;
   /** localStorage prefix for prefs, remembered hashes and recent devices (default "rdweb"). */
   storageKey?: string;
@@ -183,6 +184,10 @@ function RemoteFiles(props: RemoteDesktopProps) {
         onBack={props.onLeave}
         title={props.peerId}
         storageKey={storageKey}
+        onConnected={(peer) => {
+          pushRecent(props.peerId, peer.hostname || undefined, storageKey);
+          props.onConnected?.(screenlessPeer(peer));
+        }}
       />
     </div>
   );

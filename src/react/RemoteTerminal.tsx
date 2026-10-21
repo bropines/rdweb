@@ -6,7 +6,8 @@ import { ExtraKeys } from "./ExtraKeys.js";
 import { ConnectPane, type ConnState } from "./FilesSheet.js";
 import { useI18n } from "./i18n/index.js";
 import { cn, SCOPE } from "./lib/utils.js";
-import { DEFAULT_STORAGE_KEY, loadRememberedHash } from "./prefs.js";
+import { screenlessPeer } from "./peerSummary.js";
+import { DEFAULT_STORAGE_KEY, loadRememberedHash, pushRecent } from "./prefs.js";
 import type { RemoteDesktopProps } from "./RemoteDesktop.js";
 import { Button } from "./ui/button.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog.js";
@@ -507,6 +508,10 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       if (disposed) return;
       const p = s.peer;
       if (p) setTitle(p.hostname ? `${p.hostname} · ${props.peerId}` : props.peerId);
+      if (p) {
+        pushRecent(props.peerId, p.hostname || undefined, storageKey);
+        props.onConnected?.(screenlessPeer(p));
+      }
       // ConPTY repaints on resize itself: no reflow on top of it
       if (p?.os === "windows") for (const pane of panes.current.values()) pane.term.options.windowsPty = { backend: "conpty" };
       if (closing) {
