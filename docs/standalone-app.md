@@ -97,8 +97,8 @@ The device must be online and allow incoming connections. It asks for its
 password unless someone accepts the request on the device. "Remember
 password" stores a salted hash in this browser, never the password itself
 (see [security.md](security.md#remembered-passwords)). Recent devices appear
-under the form for one-click connections; the browser's back button leaves a
-session.
+under the form: one tap fills in the server and the ID, then Connect, Files
+only or Terminal; the browser's back button leaves a session.
 
 ## Checking a server
 
