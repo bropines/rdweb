@@ -65,7 +65,7 @@ import {
 import { DESKTOP_KEYS, desktopLayout as layoutFor, isModifier, MODIFIER_CODES, physicalKey, type Modifier } from "./keys.js";
 import { SettingsSheet } from "./SettingsSheet.js";
 import { DEFAULT_PINNED_DESKTOP, DEFAULT_PINNED_TOUCH, Toolbar, type ToolbarAction } from "./Toolbar.js";
-import { useVisualViewport } from "./viewport.js";
+import { useNoPullToRefresh, useVisualViewport } from "./viewport.js";
 import { Button } from "./ui/button.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog.js";
 import { Input } from "./ui/input.js";
@@ -450,8 +450,9 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
     if (viewerRef.current && viewerRef.current.getInputMode() !== inputMode) viewerRef.current.setInputMode(inputMode);
   }, [inputMode]);
 
-  // Keep the screen above on-screen keyboards.
+  // Keep the screen above on-screen keyboards, and the page from reloading on a swipe down.
   useVisualViewport(shellRef);
+  useNoPullToRefresh();
 
   useEffect(() => {
     const onFs = () => setFullscreen(!!document.fullscreenElement);
@@ -699,6 +700,9 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
           label={t("keys.bar")}
           moreLabel={t("keys.more")}
           lessLabel={t("keys.less")}
+          hideHint={t("keys.hide")}
+          showLabel={t("keys.show")}
+          stateKey={`${storageKey}.keys`}
         />
       )}
 

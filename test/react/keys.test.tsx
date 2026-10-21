@@ -132,6 +132,21 @@ describe("ExtraKeys", () => {
     expect(onKey).not.toHaveBeenCalled();
   });
 
+  it("hides the whole bar on a swipe down over the pinned key, and remembers it", () => {
+    localStorage.removeItem("t.keys");
+    const props = { base: TERMINAL_LAYOUT.base, more: TERMINAL_LAYOUT.more, latched: new Set<string>(), onKey: vi.fn(), label: "Extra keys", moreLabel: "More keys", lessLabel: "Fewer keys", showLabel: "Show keys", stateKey: "t.keys" };
+    const { unmount } = render(<ExtraKeys {...props} />);
+    tap(key("More keys"), 100, 130);
+    expect(screen.queryByRole("toolbar")).toBeNull();
+    expect(localStorage.getItem("t.keys")).toBe("hidden");
+    unmount();
+    render(<ExtraKeys {...props} />);
+    fireEvent.click(key("Show keys"));
+    expect(screen.getByRole("toolbar")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "F1" })).toBeNull();
+    expect(props.onKey).not.toHaveBeenCalled();
+  });
+
   it("marks latched modifiers", () => {
     renderKeys(vi.fn(), new Set(["ctrl"]));
     expect(key("Ctrl").getAttribute("aria-pressed")).toBe("true");

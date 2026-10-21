@@ -4,8 +4,21 @@ import { useEffect, type RefObject } from "react";
  * Keeps a full-screen element inside the visual viewport, so on-screen
  * keyboards shrink it instead of covering its bottom (Chrome on Android and
  * Safari only resize the visual viewport by default).
+ *
+ * While mounted it also asks Chrome to resize the page itself for the
+ * keyboard (interactive-widget=resizes-content): with the address bar at the
+ * bottom, Chrome otherwise reports a visual viewport short by that bar's
+ * height, which left a gap between the session and the keyboard.
  */
 export function useVisualViewport(ref: RefObject<HTMLElement | null>): void {
+  useEffect(() => {
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+    const before = meta?.getAttribute("content");
+    if (meta && before !== null && before !== undefined && !/interactive-widget/.test(before)) {
+      meta.setAttribute("content", `${before}, interactive-widget=resizes-content`);
+      return () => meta.setAttribute("content", before);
+    }
+  }, []);
   useEffect(() => {
     const vv = window.visualViewport;
     const el = ref.current;
@@ -22,4 +35,18 @@ export function useVisualViewport(ref: RefObject<HTMLElement | null>): void {
       vv.removeEventListener("scroll", apply);
     };
   }, [ref]);
+}
+
+/**
+ * Turns off the browser's pull-to-refresh and overscroll bounce while the
+ * component is mounted: a downward swipe in a full-screen session must not
+ * reload the page.
+ */
+export function useNoPullToRefresh(): void {
+  useEffect(() => {
+    const els = [document.documentElement, document.body];
+    const before = els.map((el) => el.style.overscrollBehavior);
+    for (const el of els) el.style.overscrollBehavior = "none";
+    return () => els.forEach((el, i) => (el.style.overscrollBehavior = before[i] ?? ""));
+  }, []);
 }

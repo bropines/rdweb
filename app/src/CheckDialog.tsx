@@ -104,8 +104,10 @@ export function CheckDialog({ target, onClose }: { target: CheckTarget | null; o
               id="check-peer"
               value={peerId}
               onChange={(e) => setPeerId(e.target.value)}
-              inputMode="numeric"
               autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
               placeholder="123 456 789"
             />
             <Button type="submit" disabled={running}>

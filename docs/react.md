@@ -261,8 +261,15 @@ PowerShell or cmd on Windows, the user's shell elsewhere.
   Ctrl, Alt and Shift (Shift+Tab, Ctrl+arrows, Ctrl then a letter from the
   phone keyboard; Shift then Enter is a new line). Swipe up on `/` or `-` for
   `\` or `|`. The pinned ▲ key shows more layers above: F1–F12, ^C ^D ^Z ^L
-  ^R, Ins, Del, Paste and `` | ~ ` \ { } [ ] < > ``. The terminal stays above the
-  on-screen keyboard, and a two-finger pinch changes the font size.
+  ^R, Ins, Del, Paste and `` | ~ ` \ { } [ ] < > ``; a swipe down over ▲ hides
+  the bar (a button bottom left brings it back). The terminal stays above the
+  on-screen keyboard, one finger scrolls with momentum (no pull-to-refresh), and
+  a two-finger pinch changes the font size (5–32).
+- "Send letters as you type" (touch screens, on by default): phone keyboards
+  such as Gboard or Yandex hold a word until space; with this every letter goes
+  out at once, so shells highlight and complete as you type.
+- Windows devices: xterm runs in ConPTY mode and tells the device about a new
+  size once it settles, so resizing garbles the history less.
 - Settings (kept in this browser): a font installed on the computer (empty:
   system monospace), font size, and a built-in Symbols Nerd Font for prompt
   icons (oh-my-posh, starship), loaded on demand (about 1.6 MB, once).

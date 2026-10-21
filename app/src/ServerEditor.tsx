@@ -92,7 +92,7 @@ export function ServerEditor({ editing, onClose, onSave, onCheck }: Props) {
               {t("editor.importTitle")}
             </Label>
             <p className="text-xs text-muted-foreground">{t("editor.importHint")}</p>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 id="srv-config"
                 value={config}
