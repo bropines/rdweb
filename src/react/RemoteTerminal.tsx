@@ -2,6 +2,7 @@ import { ArrowDown, ChevronDown, ChevronLeft, ChevronUp, Plus, RefreshCw, Search
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { TerminalSession } from "../terminal.js";
+import { ExtraKeys } from "./ExtraKeys.js";
 import { ConnectPane, type ConnState } from "./FilesSheet.js";
 import { useI18n } from "./i18n/index.js";
 import { cn, SCOPE } from "./lib/utils.js";
@@ -12,27 +13,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "./ui/input.js";
 import { Label } from "./ui/label.js";
 import { Checkbox } from "./ui/misc.js";
+import { isModifier, modifyText, TERMINAL_LAYOUT, terminalKey, type TermMods } from "./keys.js";
 import { localShellStore, type SavedShells } from "./shellStore.js";
+import { useVisualViewport } from "./viewport.js";
 import { XTERM_CSS } from "./xtermCss.js";
 
 const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused"];
-
-/** Keys a phone keyboard lacks, as terminal input. */
-/** Keys repeated while held (like a hardware keyboard). */
-const REPEATING = new Set(["↑", "↓", "←", "→"]);
-const REPEAT_DELAY_MS = 400;
-const REPEAT_EVERY_MS = 60;
-
-const EXTRA_KEYS: [string, string][] = [
-  ["Esc", "\x1b"],
-  ["Tab", "\t"],
-  ["^C", "\x03"],
-  ["^D", "\x04"],
-  ["↑", "\x1b[A"],
-  ["↓", "\x1b[B"],
-  ["←", "\x1b[D"],
-  ["→", "\x1b[C"],
-];
 
 const SYSTEM_MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
 const NERD_FAMILY = "rdweb Nerd Symbols";
@@ -220,33 +206,25 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const [active, setActive] = useState(0);
   const activeRef = useRef(0);
   const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
-  // Ctrl / Alt from the extra keys bar, applied to the next key typed
-  const [sticky, setSticky] = useState<{ ctrl: boolean; alt: boolean }>({ ctrl: false, alt: false });
-  // held extra key: the pending delay, then the repeat interval
-  const repeatRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stopRepeat = () => {
-    if (repeatRef.current !== null) {
-      clearTimeout(repeatRef.current);
-      clearInterval(repeatRef.current);
-      repeatRef.current = null;
-    }
-  };
-  useEffect(() => stopRepeat, []);
+  // Ctrl / Alt / Shift from the extra keys bar, applied to the next key typed
+  const [sticky, setSticky] = useState<TermMods>({ ctrl: false, alt: false, shift: false });
   const stickyRef = useRef(sticky);
   stickyRef.current = sticky;
+  const takeSticky = (): TermMods => {
+    const m = stickyRef.current;
+    if (m.ctrl || m.alt || m.shift) {
+      stickyRef.current = { ctrl: false, alt: false, shift: false };
+      setSticky(stickyRef.current);
+    }
+    return m;
+  };
   const applySticky = (d: string): string => {
     const m = stickyRef.current;
-    if ((!m.ctrl && !m.alt) || [...d].length !== 1) return d;
-    let out = d;
-    if (m.ctrl) {
-      const c = d.toUpperCase().charCodeAt(0);
-      if (c >= 0x40 && c <= 0x5f) out = String.fromCharCode(c & 0x1f); // Ctrl+A..Z, [ \\ ] ^ _
-      else if (d === " ") out = "\x00";
-    }
-    if (m.alt) out = `\x1b${out}`;
-    setSticky({ ctrl: false, alt: false });
-    return out;
+    if ((!m.ctrl && !m.alt && !m.shift) || [...d].length !== 1) return d;
+    return modifyText(d, takeSticky());
   };
+  const rootRef = useRef<HTMLDivElement>(null);
+  useVisualViewport(rootRef);
 
   const updateScrolled = (id: number) => {
     if (id !== activeRef.current) return;
@@ -641,10 +619,31 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     };
   }, []);
 
+  /** A key from the extra keys bar: modifiers latch, the rest go to the active shell. */
+  const extraKey = (id: string) => {
+    const tab = activeRef.current;
+    const pane = panes.current.get(tab);
+    if (isModifier(id)) {
+      if (id !== "meta") setSticky((s) => ({ ...s, [id]: !s[id] }));
+      return;
+    }
+    if (id === "paste") {
+      void navigator.clipboard
+        ?.readText()
+        .then((text) => {
+          if (text) pane?.term.paste(text);
+        })
+        .catch(() => {});
+      return;
+    }
+    const seq = terminalKey(id, takeSticky(), pane?.term.modes.applicationCursorKeysMode);
+    if (seq !== null) sessRef.current?.write(seq, tab);
+  };
+
   const overlay = conn !== "ready" && !ended && !choices;
   const ready = conn === "ready" && !ended;
   return (
-    <div className={cn(SCOPE, "fixed inset-0 flex flex-col bg-[#0a0a0a] text-white", props.className)}>
+    <div ref={rootRef} className={cn(SCOPE, "fixed inset-x-0 top-0 flex h-dvh flex-col bg-[#0a0a0a] text-white", props.className)}>
       <div className="flex shrink-0 items-center gap-2 border-b border-white/10 px-2 py-2">
         <Button size="icon" variant="ghost" className="text-white hover:bg-white/10 hover:text-white" aria-label={t("toolbar.back")} title={t("toolbar.back")} onClick={leave}>
           <ChevronLeft className="h-5 w-5" />
@@ -842,50 +841,15 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         )}
       </div>
       {touch && ready && (
-        <div className="flex shrink-0 gap-1 overflow-x-auto border-t border-white/10 px-1.5 py-1.5" aria-label={t("terminal.keys")}>
-          {(["ctrl", "alt"] as const).map((m) => (
-            <Button
-              key={m}
-              size="sm"
-              variant="ghost"
-              aria-pressed={sticky[m]}
-              className={cn("h-11 min-w-11 shrink-0 px-3.5 font-mono text-base text-white hover:bg-white/10 hover:text-white", sticky[m] && "bg-primary text-primary-foreground hover:bg-primary")}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                setSticky((s) => ({ ...s, [m]: !s[m] }));
-                panes.current.get(active)?.term.focus();
-              }}
-            >
-              {m === "ctrl" ? "Ctrl" : "Alt"}
-            </Button>
-          ))}
-          {EXTRA_KEYS.map(([label, seq]) => (
-            <Button
-              key={label}
-              size="sm"
-              variant="ghost"
-              className="h-11 min-w-11 shrink-0 touch-none select-none px-3.5 font-mono text-base text-white hover:bg-white/10 hover:text-white"
-              onMouseDown={(e) => e.preventDefault()}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                const send = () => sessRef.current?.write(stickyRef.current.alt && seq.length === 1 ? applySticky(seq) : seq, active);
-                send();
-                stopRepeat();
-                if (REPEATING.has(label)) {
-                  repeatRef.current = setTimeout(() => {
-                    repeatRef.current = setInterval(send, REPEAT_EVERY_MS);
-                  }, REPEAT_DELAY_MS);
-                }
-              }}
-              onPointerUp={stopRepeat}
-              onPointerLeave={stopRepeat}
-              onPointerCancel={stopRepeat}
-              onContextMenu={(e) => e.preventDefault()}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
+        <ExtraKeys
+          base={TERMINAL_LAYOUT.base}
+          more={TERMINAL_LAYOUT.more}
+          latched={new Set(Object.entries(sticky).filter(([, on]) => on).map(([m]) => m))}
+          onKey={extraKey}
+          label={t("terminal.keys")}
+          moreLabel={t("terminal.keysMore")}
+          lessLabel={t("terminal.keysLess")}
+        />
       )}
     </div>
   );

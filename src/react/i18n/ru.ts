@@ -126,6 +126,9 @@ export const ru = {
     legacy: "Совместимый",
   },
   keys: {
+    bar: "Дополнительные клавиши",
+    more: "Больше клавиш",
+    less: "Меньше клавиш",
     ControlLeft: "Ctrl",
     AltLeft: "Alt",
     MetaLeft: "Win",
@@ -177,6 +180,8 @@ export const ru = {
     passwordDesc: "Введите пароль устройства, чтобы открыть его терминал.",
     ended: "Сеанс терминала завершён: {{reason}}",
     keys: "Дополнительные клавиши",
+    keysMore: "Больше клавиш",
+    keysLess: "Меньше клавиш",
     tab: "Шелл {{n}}",
     tabs: "Терминалы",
     newTab: "Новый терминал",

@@ -196,9 +196,13 @@ view-only is per session and never restored.
 </p>
 
 On touch screens the toolbar has a larger handle and the keyboard button,
-which opens the on-screen keyboard together with a row of extra keys (Ctrl,
-Alt, Win, Shift as sticky modifiers, Esc, Tab, arrows, Del, Home, End,
-F1–F12). The touch screen works as a touchpad or as direct touch, with pinch
+which opens the on-screen keyboard together with two rows of extra keys, laid
+out like Termux: Esc, Tab, Del, Home, End, PgUp, PgDn, arrows that repeat while
+held, and Ctrl, Alt, Win (Cmd on a Mac, Super on Linux) and Shift as sticky
+modifiers that also apply to the next letter typed on the phone keyboard
+(Ctrl, then C sends Ctrl+C). The pinned ▲ key shows more layers above: F1–F12,
+Ins, PrtSc, Menu, Backspace, Enter. The session stays above the on-screen
+keyboard. The touch screen works as a touchpad or as direct touch, with pinch
 zoom.
 
 ### Files from the screen
@@ -252,9 +256,13 @@ PowerShell or cmd on Windows, the user's shell elsewhere.
   Alt+Enter); Ctrl/Cmd + `=` `-` `0` change the font size; Shift+PageUp,
   PageDown, Home and End page through the scrollback.
 - Option works as Alt on macOS (can be turned off).
-- Touch screens get a row of extra keys (Esc, Tab, ^C, ^D, arrows that repeat
-  while held) with sticky Ctrl and Alt, and a two-finger pinch changes the font
-  size.
+- Touch screens get two rows of extra keys, laid out like Termux: Esc, `/`,
+  `-`, Home, End, PgUp, PgDn, Tab, arrows that repeat while held, and sticky
+  Ctrl, Alt and Shift (Shift+Tab, Ctrl+arrows, Ctrl then a letter from the
+  phone keyboard; Shift then Enter is a new line). Swipe up on `/` or `-` for
+  `\` or `|`. The pinned ▲ key shows more layers above: F1–F12, ^C ^D ^Z ^L
+  ^R, Ins, Del, Paste and `` | ~ ` \ { } [ ] < > ``. The terminal stays above the
+  on-screen keyboard, and a two-finger pinch changes the font size.
 - Settings (kept in this browser): a font installed on the computer (empty:
   system monospace), font size, and a built-in Symbols Nerd Font for prompt
   icons (oh-my-posh, starship), loaded on demand (about 1.6 MB, once).

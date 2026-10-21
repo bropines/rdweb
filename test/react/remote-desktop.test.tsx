@@ -46,6 +46,7 @@ const fakes = vi.hoisted(() => {
     setInputMode() {}
     setScaleMode() {}
     setZoomCursor() {}
+    setSoftKeyHandler() {}
     focus() {}
     destroy() {}
   }
