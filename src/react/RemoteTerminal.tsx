@@ -648,17 +648,9 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const setInstantInput = (pane: Pane, id: number, on: boolean) => {
     if (!touch || on === !!pane.detachInstant) return;
     if (on) {
-      pane.detachInstant = attachInstantInput(
-        pane.term,
-        (d) => {
-          if (!pane.replaying) sessRef.current?.write(applySticky(d), id);
-        },
-        // the keyboard's own cursor keys
-        (key) => {
-          const seq = terminalKey(key, takeSticky(), pane.term.modes.applicationCursorKeysMode);
-          if (seq !== null && !pane.replaying) sessRef.current?.write(seq, id);
-        },
-      );
+      pane.detachInstant = attachInstantInput(pane.term, (d) => {
+        if (!pane.replaying) sessRef.current?.write(applySticky(d), id);
+      });
     } else {
       pane.detachInstant?.();
       pane.detachInstant = undefined;
