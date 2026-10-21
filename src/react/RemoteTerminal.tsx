@@ -21,6 +21,10 @@ import { XTERM_CSS } from "./xtermCss.js";
 
 const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused"];
 
+const MIN_FONT = 5;
+const MAX_FONT = 32;
+const RESIZE_SETTLE_MS = 150;
+
 const SYSTEM_MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
 const NERD_FAMILY = "rdweb Nerd Symbols";
 
@@ -60,7 +64,7 @@ function loadTerminalPrefs(storageKey: string): TerminalPrefs {
     const v = raw ? (JSON.parse(raw) as Partial<TerminalPrefs>) : {};
     return {
       fontFamily: typeof v.fontFamily === "string" ? v.fontFamily.slice(0, 100) : "",
-      fontSize: typeof v.fontSize === "number" && v.fontSize >= 8 && v.fontSize <= 32 ? v.fontSize : 14,
+      fontSize: typeof v.fontSize === "number" && v.fontSize >= MIN_FONT && v.fontSize <= MAX_FONT ? v.fontSize : 14,
       nerdSymbols: v.nerdSymbols !== false,
       persistent: v.persistent !== false,
       copyOnSelect: v.copyOnSelect !== false,
@@ -240,17 +244,34 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     if (b) setScrolledUp(b.viewportY < b.baseY);
   };
 
+  // The device's shell hears about a new size once it settles: every resize
+  // makes ConPTY on Windows repaint the screen into the scrollback.
+  const resizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sentSize = useRef(new Map<number, string>());
   const fitActive = () => {
     const id = activeRef.current;
     const p = panes.current.get(id);
     if (!p) return;
     try {
       p.fit.fit();
-      sessRef.current?.resize(p.term.cols, p.term.rows, id);
     } catch {
-      /* hidden or detached */
+      return; // hidden or detached
     }
+    if (resizeTimer.current !== null) clearTimeout(resizeTimer.current);
+    resizeTimer.current = setTimeout(() => {
+      resizeTimer.current = null;
+      const size = `${p.term.cols}x${p.term.rows}`;
+      if (sentSize.current.get(id) === size) return;
+      sentSize.current.set(id, size);
+      sessRef.current?.resize(p.term.cols, p.term.rows, id);
+    }, RESIZE_SETTLE_MS);
   };
+  useEffect(
+    () => () => {
+      if (resizeTimer.current !== null) clearTimeout(resizeTimer.current);
+    },
+    [],
+  );
 
   /** An xterm in the tab's host element; keystrokes go to that tab's shell. */
   const createPane = (id: number): Pane | null => {
@@ -266,6 +287,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       allowProposedApi: true, // unicode11 and search decorations
       rightClickSelectsWord: false,
       macOptionIsMeta: prefsRef.current.optionAsAlt,
+      windowsPty: sessRef.current?.peer?.os === "windows" ? { backend: "conpty" } : undefined,
     });
     const fit = new lib.FitAddon();
     const search = new lib.SearchAddon();
@@ -302,7 +324,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       if (mod && !e.altKey && (e.key === "=" || e.key === "+" || e.key === "-" || e.key === "0")) {
         e.preventDefault();
         const size = e.key === "0" ? DEFAULT_TERMINAL_PREFS.fontSize : prefsRef.current.fontSize + (e.key === "-" ? -1 : 1);
-        void applyPrefs({ ...prefsRef.current, fontSize: Math.min(32, Math.max(8, size)) });
+        void applyPrefs({ ...prefsRef.current, fontSize: Math.min(MAX_FONT, Math.max(MIN_FONT, size)) });
         return false;
       }
       // Shift+PageUp/PageDown/Home/End page through the scrollback (like most terminals)
@@ -439,6 +461,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       if (disposed) return;
       const p = s.peer;
       if (p) setTitle(p.hostname ? `${p.hostname} · ${props.peerId}` : props.peerId);
+      // ConPTY repaints on resize itself: no reflow on top of it
+      if (p?.os === "windows") for (const pane of panes.current.values()) pane.term.options.windowsPty = { backend: "conpty" };
       if (closing) {
         // "Close": end the remembered shells, then offer the rest again
         s.closeService();
@@ -689,7 +713,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       e.stopPropagation(); // xterm would scroll as well
       if (pinch && e.touches.length === 2) {
         e.preventDefault(); // no page zoom, no scrolling while pinching
-        const next = Math.min(32, Math.max(8, Math.round(pinch.size * (dist(e.touches) / pinch.dist))));
+        const next = Math.min(MAX_FONT, Math.max(MIN_FONT, Math.round(pinch.size * (dist(e.touches) / pinch.dist))));
         if (next === size) return;
         size = next;
         for (const p of panes.current.values()) p.term.options.fontSize = next;
@@ -992,7 +1016,7 @@ function TerminalSettings({
           className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            onApply({ ...draft, fontSize: Math.min(32, Math.max(8, Math.round(draft.fontSize) || 14)) });
+            onApply({ ...draft, fontSize: Math.min(MAX_FONT, Math.max(MIN_FONT, Math.round(draft.fontSize) || 14)) });
             onOpenChange(false);
           }}
         >
@@ -1018,8 +1042,8 @@ function TerminalSettings({
             <Input
               id="rdweb-term-size"
               type="number"
-              min={8}
-              max={32}
+              min={MIN_FONT}
+              max={MAX_FONT}
               value={draft.fontSize}
               onChange={(e) => setDraft({ ...draft, fontSize: Number(e.target.value) })}
               className="w-24"
