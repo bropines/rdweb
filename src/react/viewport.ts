@@ -4,8 +4,21 @@ import { useEffect, type RefObject } from "react";
  * Keeps a full-screen element inside the visual viewport, so on-screen
  * keyboards shrink it instead of covering its bottom (Chrome on Android and
  * Safari only resize the visual viewport by default).
+ *
+ * While mounted it also asks Chrome to resize the page itself for the
+ * keyboard (interactive-widget=resizes-content): with the address bar at the
+ * bottom, Chrome otherwise reports a visual viewport short by that bar's
+ * height, which left a gap between the session and the keyboard.
  */
 export function useVisualViewport(ref: RefObject<HTMLElement | null>): void {
+  useEffect(() => {
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+    const before = meta?.getAttribute("content");
+    if (meta && before !== null && before !== undefined && !/interactive-widget/.test(before)) {
+      meta.setAttribute("content", `${before}, interactive-widget=resizes-content`);
+      return () => meta.setAttribute("content", before);
+    }
+  }, []);
   useEffect(() => {
     const vv = window.visualViewport;
     const el = ref.current;

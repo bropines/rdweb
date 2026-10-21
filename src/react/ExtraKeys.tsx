@@ -133,7 +133,7 @@ export function ExtraKeys(props: ExtraKeysProps) {
           tabIndex={-1}
           aria-label={props.showLabel ?? props.moreLabel}
           title={props.showLabel ?? props.moreLabel}
-          className="absolute bottom-2 right-2 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-neutral-900/80 text-white shadow-lg"
+          className="absolute bottom-2 left-2 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-neutral-900/80 text-white shadow-lg"
           onMouseDown={(e) => e.preventDefault()}
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => setState("base")}

@@ -654,8 +654,28 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       };
       fling = requestAnimationFrame(step);
     };
+    // Scrolling re-renders the rows, and the row a finger started on leaves
+    // the document; its touches keep going to that element only. So moves
+    // and ends are followed on the elements the touches started on.
+    const targets = new Set<EventTarget>();
+    const follow = (t: EventTarget | null) => {
+      if (!t || targets.has(t)) return;
+      targets.add(t);
+      t.addEventListener("touchmove", onMove as EventListener, { passive: false });
+      t.addEventListener("touchend", onEnd as EventListener);
+      t.addEventListener("touchcancel", onEnd as EventListener);
+    };
+    const unfollow = () => {
+      for (const t of targets) {
+        t.removeEventListener("touchmove", onMove as EventListener);
+        t.removeEventListener("touchend", onEnd as EventListener);
+        t.removeEventListener("touchcancel", onEnd as EventListener);
+      }
+      targets.clear();
+    };
     const onStart = (e: TouchEvent) => {
       stopFling();
+      follow(e.target);
       if (e.touches.length === 2) {
         drag = null;
         pinch = { dist: dist(e.touches), size: prefsRef.current.fontSize };
@@ -665,7 +685,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         carry = 0;
       }
     };
-    const onMove = (e: TouchEvent) => {
+    function onMove(e: TouchEvent) {
+      e.stopPropagation(); // xterm would scroll as well
       if (pinch && e.touches.length === 2) {
         e.preventDefault(); // no page zoom, no scrolling while pinching
         const next = Math.min(32, Math.max(8, Math.round(pinch.size * (dist(e.touches) / pinch.dist))));
@@ -677,7 +698,6 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       }
       if (!drag || e.touches.length !== 1) return;
       e.preventDefault(); // no pull-to-refresh
-      e.stopPropagation(); // xterm would scroll as well
       const t = e.touches[0]!;
       const dy = drag.y - t.clientY;
       const dt = Math.max(1, e.timeStamp - drag.t);
@@ -685,31 +705,28 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       drag.y = t.clientY;
       drag.t = e.timeStamp;
       scrollBy(dy, t.clientX, t.clientY);
-    };
-    const onEnd = (e: TouchEvent) => {
+    }
+    function onEnd(e: TouchEvent) {
+      e.stopPropagation();
       if (pinch && e.touches.length < 2) {
         const changed = size !== pinch.size;
         pinch = null;
         if (changed) void applyRef.current({ ...prefsRef.current, fontSize: size });
       }
-      if (drag && e.touches.length === 0) {
+      if (e.touches.length > 0) return;
+      unfollow();
+      if (drag) {
         const { v, t } = drag;
         drag = null;
         const p = e.changedTouches[0];
         if (e.type === "touchend" && p && e.timeStamp - t < 100 && Math.abs(v) > 0.3) startFling(v, p.clientX, p.clientY);
       }
-    };
-    // capture: before xterm's own touch scrolling on the elements inside
+    }
     el.addEventListener("touchstart", onStart, { passive: true, capture: true });
-    el.addEventListener("touchmove", onMove, { passive: false, capture: true });
-    el.addEventListener("touchend", onEnd, { passive: true, capture: true });
-    el.addEventListener("touchcancel", onEnd, { passive: true, capture: true });
     return () => {
       stopFling();
+      unfollow();
       el.removeEventListener("touchstart", onStart, { capture: true });
-      el.removeEventListener("touchmove", onMove, { capture: true });
-      el.removeEventListener("touchend", onEnd, { capture: true });
-      el.removeEventListener("touchcancel", onEnd, { capture: true });
     };
   }, []);
 
@@ -791,7 +808,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
           )}
         </div>
       )}
-      <div ref={areaRef} className="relative min-h-0 flex-1 p-1.5">
+      <div ref={areaRef} className="relative min-h-0 flex-1 p-1.5 [&_.xterm]:touch-none [&_.xterm_*]:touch-none">
         {tabs.map((tab) => (
           <div
             key={tab.id}
