@@ -902,26 +902,7 @@ export class Session {
   }
 
   private supportedDecoding(s: SessionSettings) {
-    const dec = this.codecSupport.decode;
-    const d444 = this.codecSupport.decode444;
-    const prefer: Record<SessionSettings["codec"], PreferCodec> = {
-      auto: PreferCodec.Auto,
-      vp8: PreferCodec.VP8,
-      vp9: PreferCodec.VP9,
-      av1: PreferCodec.AV1,
-      h264: PreferCodec.H264,
-      h265: PreferCodec.H265,
-    };
-    return {
-      abilityVp8: dec.has("vp8") ? 1 : 0,
-      abilityVp9: dec.has("vp9") ? 1 : 0,
-      abilityAv1: dec.has("av1") ? 1 : 0,
-      abilityH264: dec.has("h264") ? 1 : 0,
-      abilityH265: dec.has("h265") ? 1 : 0,
-      prefer: prefer[s.codec],
-      i444: { vp9: d444.has("vp9"), av1: d444.has("av1") },
-      preferChroma: s.trueColor ? Chroma.I444 : Chroma.I420,
-    };
+    return decodingOffer(this.codecSupport, s);
   }
 
   private sendMouse(mask: number, x: number, y: number): void {
@@ -1049,4 +1030,33 @@ function blockMessage(s: BlockState): string {
     default:
       return "";
   }
+}
+
+/**
+ * What the browser tells the peer it can decode. H.265 only when chosen
+ * explicitly: some browsers report it supported and then return cropped
+ * frames (Edge on Windows decodes a 3420x2214 stream into its top-left
+ * 1920x1080), and "auto" would let the peer pick it for being the cheapest.
+ */
+export function decodingOffer(support: CodecSupport, s: SessionSettings) {
+  const dec = support.decode;
+  const d444 = support.decode444;
+  const prefer: Record<SessionSettings["codec"], PreferCodec> = {
+    auto: PreferCodec.Auto,
+    vp8: PreferCodec.VP8,
+    vp9: PreferCodec.VP9,
+    av1: PreferCodec.AV1,
+    h264: PreferCodec.H264,
+    h265: PreferCodec.H265,
+  };
+  return {
+    abilityVp8: dec.has("vp8") ? 1 : 0,
+    abilityVp9: dec.has("vp9") ? 1 : 0,
+    abilityAv1: dec.has("av1") ? 1 : 0,
+    abilityH264: dec.has("h264") ? 1 : 0,
+    abilityH265: dec.has("h265") && s.codec === "h265" ? 1 : 0,
+    prefer: prefer[s.codec],
+    i444: { vp9: d444.has("vp9"), av1: d444.has("av1") },
+    preferChroma: s.trueColor ? Chroma.I444 : Chroma.I420,
+  };
 }
