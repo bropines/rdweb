@@ -6,7 +6,8 @@ import { ExtraKeys } from "./ExtraKeys.js";
 import { ConnectPane, type ConnState } from "./FilesSheet.js";
 import { useI18n } from "./i18n/index.js";
 import { cn, SCOPE } from "./lib/utils.js";
-import { DEFAULT_STORAGE_KEY, loadRememberedHash } from "./prefs.js";
+import { screenlessPeer } from "./peerSummary.js";
+import { DEFAULT_STORAGE_KEY, loadRememberedHash, pushRecent, saveRememberedHash } from "./prefs.js";
 import type { RemoteDesktopProps } from "./RemoteDesktop.js";
 import { Button } from "./ui/button.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog.js";
@@ -26,6 +27,7 @@ const MIN_FONT = 5;
 const MAX_FONT = 32;
 const RESIZE_SETTLE_MS = 150;
 const LONG_PRESS_MS = 450;
+const TAP_SLOP_PX = 6;
 
 const SYSTEM_MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
 const NERD_FAMILY = "rdweb Nerd Symbols";
@@ -209,6 +211,9 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const [error, setError] = useState("");
   const [wrong, setWrong] = useState(false);
   const [secret, setSecret] = useState("");
+  const [remember, setRemember] = useState(false);
+  const rememberRef = useRef(false);
+  rememberRef.current = remember;
   const [ended, setEnded] = useState<string | null>(null);
   const [title, setTitle] = useState(props.peerId);
   const [prefs, setPrefs] = useState<TerminalPrefs>(() => loadTerminalPrefs(storageKey));
@@ -476,6 +481,11 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         setConn("twoFactor");
       });
       s.on("waitingForApproval", () => setConn("waiting"));
+      s.on("connected", ({ rememberedHash }) => {
+        if (!rememberedHash || !rememberRef.current) return;
+        saveRememberedHash(props.server.key, props.peerId, rememberedHash, storageKey);
+        void Promise.resolve(props.onRemembered?.(rememberedHash)).catch(() => {});
+      });
       s.on("data", ({ terminalId, data, replay }) => {
         const p = panes.current.get(terminalId);
         if (!p) return;
@@ -507,6 +517,10 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       if (disposed) return;
       const p = s.peer;
       if (p) setTitle(p.hostname ? `${p.hostname} · ${props.peerId}` : props.peerId);
+      if (p) {
+        pushRecent(props.peerId, p.hostname || undefined, storageKey);
+        props.onConnected?.(screenlessPeer(p));
+      }
       // ConPTY repaints on resize itself: no reflow on top of it
       if (p?.os === "windows") for (const pane of panes.current.values()) pane.term.options.windowsPty = { backend: "conpty" };
       if (closing) {
@@ -691,7 +705,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     if (!el) return;
     let pinch: { dist: number; size: number } | null = null;
     let size = 0;
-    let drag: { y: number; t: number; v: number } | null = null;
+    // y0: where the finger went down; a drag starts scrolling only past a few pixels, so taps stay taps
+    let drag: { y: number; t: number; v: number; y0: number; moving: boolean } | null = null;
     let carry = 0; // pixels short of a whole line
     let fling = 0;
     // long press: select the word under the finger, then follow it
@@ -759,6 +774,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       targets.clear();
     };
     const onStart = (e: TouchEvent) => {
+      // only the terminal itself: forms, menus and buttons over it keep their taps
+      if (!(e.target instanceof Element) || !e.target.closest(".xterm")) return;
       stopFling();
       follow(e.target);
       lastTouch.current = Date.now();
@@ -788,7 +805,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         pinch = { dist: dist(e.touches), size: prefsRef.current.fontSize };
         size = pinch.size;
       } else if (e.touches.length === 1) {
-        drag = { y: e.touches[0]!.clientY, t: e.timeStamp, v: 0 };
+        drag = { y: e.touches[0]!.clientY, t: e.timeStamp, v: 0, y0: e.touches[0]!.clientY, moving: false };
         carry = 0;
       }
     };
@@ -821,8 +838,15 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         if (Math.hypot(t.clientX - hold.x, t.clientY - hold.y) > 10) cancelHold();
       }
       if (!drag || e.touches.length !== 1) return;
-      e.preventDefault(); // no pull-to-refresh
       const t = e.touches[0]!;
+      if (!drag.moving) {
+        if (Math.abs(t.clientY - drag.y0) < TAP_SLOP_PX) return; // still a tap: keep its click
+        drag.moving = true;
+        drag.y = t.clientY;
+        drag.t = e.timeStamp;
+        return;
+      }
+      e.preventDefault(); // no pull-to-refresh
       const dy = drag.y - t.clientY;
       const dt = Math.max(1, e.timeStamp - drag.t);
       drag.v = 0.8 * (dy / dt) + 0.2 * drag.v;
@@ -993,7 +1017,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
             ref={(el) => {
               if (el) hosts.current.set(tab.id, el);
             }}
-            className={cn("h-full w-full", tab.id !== active && "hidden")}
+            className={cn("isolate h-full w-full", tab.id !== active && "hidden")}
           />
         ))}
         {searchOpen && ready && (
@@ -1140,6 +1164,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
                   secret={secret}
                   setSecret={setSecret}
                   passwordDesc={t("terminal.passwordDesc")}
+                  remember={remember}
+                  onRemember={setRemember}
                   connectingText={t("terminal.connecting")}
                   onSubmit={() => {
                     const s = sessRef.current;
