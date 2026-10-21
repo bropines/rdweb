@@ -95,8 +95,8 @@ describe("instant input", () => {
   it("turns Yandex Keyboard's start and end keys into Home and End", () => {
     const { textarea, keys, xterm } = setup();
     const key = (k: string, mods: KeyboardEventInit) => textarea.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...mods }));
-    key("ArrowDown", { altKey: true, shiftKey: true }); // |<
-    key("ArrowUp", { altKey: true, shiftKey: true }); // >|
+    key("ArrowUp", { altKey: true, shiftKey: true }); // |<
+    key("ArrowDown", { altKey: true, shiftKey: true }); // >|
     expect(keys).toEqual(["home", "end"]);
     expect(xterm).not.toHaveBeenCalled();
     key("ArrowUp", { altKey: true }); // a real Alt+↑ stays with xterm

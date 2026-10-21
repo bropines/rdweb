@@ -14,7 +14,7 @@
  * have something to delete, and the cursor keys of a keyboard's editing panel
  * all have somewhere to go (Yandex Keyboard sends nothing for → ↓ when the
  * caret is at the end). Those keys arrive as real key events and stay with
- * xterm, except Yandex's start/end keys, sent as Alt+Shift+↓/↑, which become
+ * xterm, except Yandex's start/end keys, sent as Alt+Shift+↑/↓, which become
  * Home and End; a caret the keyboard moves itself (to the start or the end,
  * or by a few characters) becomes Home, End or arrows.
  *
@@ -121,10 +121,10 @@ export function attachInstantInput(
       own(e);
       return;
     }
-    // Yandex Keyboard's start and end keys (|< >|) arrive as Alt+Shift+↓ and Alt+Shift+↑
+    // Yandex Keyboard's start and end keys (|< >|) arrive as Alt+Shift+↑ and Alt+Shift+↓
     if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && (e.key === "ArrowDown" || e.key === "ArrowUp") && own(e)) {
       e.preventDefault();
-      sendKey(e.key === "ArrowDown" ? "home" : "end");
+      sendKey(e.key === "ArrowUp" ? "home" : "end");
     }
   };
   // The caret moved without an edit: the keyboard moved it itself.
