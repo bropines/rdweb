@@ -164,7 +164,7 @@ exported as `DEFAULT_SETTINGS`. Change them at any time with
 | `imageQuality` | `"balanced"` | `"best"` (good image), `"balanced"`, `"low"` (optimize reaction time) or `"custom"` |
 | `customQuality` | `50` | with `"custom"`: percent of the default bitrate, 10 to 100 (up to 2000 on own servers) |
 | `customFps` | `30` | with `"custom"`: frame rate cap, 5 to 120 |
-| `codec` | `"auto"` | preferred codec: `"auto"`, `"vp8"`, `"vp9"`, `"av1"`, `"h264"`, `"h265"` |
+| `codec` | `"auto"` | preferred codec: `"auto"`, `"vp8"`, `"vp9"`, `"av1"`, `"h264"`, `"h265"`; H.265 is offered to the peer only when chosen here (Edge on Windows returns cropped H.265 frames) |
 | `trueColor` | `false` | ask for 4:4:4 chroma when the codec and the browser support it |
 | `showRemoteCursor` | `false` | draw the device's cursor at its reported position |
 | `followRemoteCursor` | `false` | |
