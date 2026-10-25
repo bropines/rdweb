@@ -1,6 +1,8 @@
 // Where a device's terminal sessions (the peer's persistent shell services) are
 // remembered so they can be reattached later, from this or another browser.
 
+import type { CloseInfo } from "../types.js";
+
 /** A set of shells kept running on a device (RustDesk terminal service). */
 export interface SavedShells {
   /** The device's service id; whoever has it (and can sign in) gets the shells back. */
@@ -21,6 +23,25 @@ export interface ShellStore {
 }
 
 const MAX_SAVED = 10;
+
+/**
+ * What a closed terminal session means for the shells the device may still be
+ * keeping: reattach to them, forget them, or keep the record and ask the user
+ * next time.
+ *
+ * `info.remote` deliberately plays no part. A relay timing out an idle session
+ * and a laptop going to sleep close the socket exactly as the peer does, so it
+ * cannot tell a dead service from a lost connection — and forgetting a service
+ * that is still running strands its shells for good, because nothing in the
+ * protocol lists a device's services: the id is the only way back. A record
+ * kept for shells that did end costs one click in the chooser, and is dropped
+ * as soon as the device answers with a service id of its own.
+ */
+export function closeAction(info: CloseInfo, opts: { persistent: boolean; shellsEnded: boolean }): "retry" | "forget" | "keep" {
+  if (!opts.persistent) return "forget";
+  if (info.retryable) return "retry";
+  return opts.shellsEnded ? "forget" : "keep";
+}
 
 /** This browser's localStorage, per server key and device. */
 export function localShellStore(storageKey: string, serverKey: string, peerId: string): ShellStore {

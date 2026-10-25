@@ -157,3 +157,65 @@ describe("TerminalSession", () => {
     expect(s2.state).toBe("closed");
   });
 });
+
+describe("TerminalSession keepalive", () => {
+  const probes = () =>
+    net.log.flatMap((m: Message) => (m.union.case === "testDelay" ? [m.union.value] : []));
+
+  // Only the interval and the clock are faked; the fake socket runs on microtasks.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const open = async (keepAliveMs?: number) => {
+    peerShell();
+    const s = new TerminalSession({ peerId: PEER_ID, server: serverConfig(), rememberedHash: sha256(PASSWORD, SALT), keepAliveMs });
+    await s.connect();
+    return s;
+  };
+
+  it("probes an idle link with a client testDelay, again and again", async () => {
+    const s = await open(4000); // ticks every 2 s
+    expect(probes()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(probes().length).toBeGreaterThanOrEqual(1);
+    expect(probes()[0]!.fromClient).toBe(true);
+    const first = probes().length;
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(probes().length).toBeGreaterThan(first + 2);
+    expect(probes().every((p) => p.fromClient === true)).toBe(true);
+    s.close();
+  });
+
+  it("does not probe a link that keeps carrying traffic", async () => {
+    const s = await open(4000);
+    for (let i = 0; i < 10; i++) {
+      await vi.advanceTimersByTimeAsync(1000);
+      s.write("x");
+    }
+    expect(probes()).toHaveLength(0);
+    s.close();
+  });
+
+  it("sends nothing more once the session is closed", async () => {
+    const s = await open(4000);
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(probes().length).toBeGreaterThanOrEqual(1);
+    s.close();
+    const sent = net.log.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(net.log).toHaveLength(sent);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([undefined, 0])("never sends a testDelay while idle when keepAliveMs is %s", async (keepAliveMs) => {
+    const s = await open(keepAliveMs);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(probes()).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+    s.close();
+  });
+});

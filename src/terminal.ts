@@ -35,6 +35,12 @@ export interface TerminalOptions {
   persistent?: boolean;
   /** The `serviceId` of an earlier session to reattach to its shells. */
   serviceId?: string;
+  /**
+   * Keep an idle link alive with a `testDelay` probe every N ms. A shell that
+   * prints nothing and is typed into by nobody carries no traffic at all, and
+   * a relay drops such a connection (hbbr after 30 s). 0 or unset: no probes.
+   */
+  keepAliveMs?: number;
 }
 
 export interface TerminalPeer {
@@ -92,6 +98,7 @@ export class TerminalSession {
         myName: opts.myName,
         myId: opts.myId,
         clientVersion: opts.clientVersion,
+        keepAliveMs: opts.keepAliveMs,
         loginExtras: () => ({
           option: opts.persistent ? { terminalPersistent: OptionMessage_BoolOption.Yes } : undefined,
           union: { case: "terminal", value: { serviceId: opts.serviceId ?? "" } },

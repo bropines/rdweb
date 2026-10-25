@@ -16,7 +16,7 @@ import { Label } from "./ui/label.js";
 import { Checkbox } from "./ui/misc.js";
 import { isModifier, modifyText, TERMINAL_LAYOUT, terminalKey, type TermMods } from "./keys.js";
 import { attachInstantInput } from "./instantInput.js";
-import { localShellStore, type SavedShells } from "./shellStore.js";
+import { closeAction, localShellStore, type SavedShells } from "./shellStore.js";
 import { cellAt, extendFrom, selectBetween, wordAt, type Cell } from "./touchSelect.js";
 import { useNoPullToRefresh, useVisualViewport } from "./viewport.js";
 import { XTERM_CSS } from "./xtermCss.js";
@@ -26,6 +26,8 @@ const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", 
 const MIN_FONT = 5;
 const MAX_FONT = 32;
 const RESIZE_SETTLE_MS = 150;
+/** Idle probe interval; hbbr drops a relay connection after 30 s of silence. */
+const KEEPALIVE_MS = 10_000;
 const LONG_PRESS_MS = 450;
 const TAP_SLOP_PX = 6;
 
@@ -41,6 +43,11 @@ export interface TerminalPrefs {
   nerdSymbols: boolean;
   /** Keep the shells running on the device when the connection drops, and reattach. */
   persistent: boolean;
+  /**
+   * Probe the connection while nothing is typed or printed, so a relay that
+   * drops idle connections (hbbr after 30 s) does not end the session.
+   */
+  keepAlive: boolean;
   /** Copy the selection to the clipboard as soon as it is made. */
   copyOnSelect: boolean;
   /** Right click: copy the selection, or paste when nothing is selected. */
@@ -56,6 +63,7 @@ const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
   fontSize: 14,
   nerdSymbols: true,
   persistent: true,
+  keepAlive: true,
   copyOnSelect: true,
   rightClickPaste: true,
   optionAsAlt: true,
@@ -71,6 +79,7 @@ function loadTerminalPrefs(storageKey: string): TerminalPrefs {
       fontSize: typeof v.fontSize === "number" && v.fontSize >= MIN_FONT && v.fontSize <= MAX_FONT ? v.fontSize : 14,
       nerdSymbols: v.nerdSymbols !== false,
       persistent: v.persistent !== false,
+      keepAlive: v.keepAlive !== false,
       copyOnSelect: v.copyOnSelect !== false,
       rightClickPaste: v.rightClickPaste !== false,
       optionAsAlt: v.optionAsAlt !== false,
@@ -202,6 +211,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const areaRef = useRef<HTMLDivElement>(null);
   const nextId = useRef(1);
   const leavingRef = useRef(false);
+  /** Set once every shell of the service has exited: nothing is left to reattach to. */
+  const shellsEndedRef = useRef(false);
   const store = useMemo(() => props.shellStore ?? localShellStore(storageKey, props.server.key, props.peerId), []);
   const serviceRef = useRef<SavedShells | null>(null);
   const [choices, setChoices] = useState<SavedShells[] | null>(null);
@@ -224,6 +235,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [tabs, setTabs] = useState<Tab[]>([{ id: 0, exited: false }]);
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
   // touch selection: a long press selects a word, dragging extends it; then a small menu
   const [selMenu, setSelMenu] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -464,6 +477,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         rows: first.term.rows,
         persistent: prefsRef.current.persistent,
         serviceId,
+        keepAliveMs: prefsRef.current.keepAlive ? KEEPALIVE_MS : 0,
       });
       sessRef.current = s;
       let hostPasswordTried = !props.credentials?.password;
@@ -500,15 +514,20 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       });
       s.on("exit", ({ terminalId, code }) => {
         panes.current.get(terminalId)?.term.write(`\r\n[${t("terminal.exited", { code })}]\r\n`);
+        // the last shell exited: the service is over, there is nothing to reattach to
+        if (tabsRef.current.every((x) => x.exited || x.id === terminalId)) shellsEndedRef.current = true;
         setTabs((list) => list.map((x) => (x.id === terminalId ? { ...x, exited: true } : x)));
       });
       s.on("close", (info) => {
         // before the shell opened, connect() rejects and shows the error instead
         if (disposed || !opened || closing) return;
         setEnded(info.reason);
-        // a dropped connection: the device keeps the shells, get them back
-        if (prefsRef.current.persistent && info.retryable && !info.remote) setAutoRetry(true);
-        else forget();
+        // A drop leaves a persistent service's shells running on the device: keep its
+        // id and reattach, rather than forgetting it and stranding them (in RD Panel
+        // the store is the account, so forgetting deletes them for every browser).
+        const action = closeAction(info, { persistent: prefsRef.current.persistent, shellsEnded: shellsEndedRef.current });
+        if (action === "retry") setAutoRetry(true);
+        else if (action === "forget") forget();
       });
       ro = new ResizeObserver(fitActive);
       if (areaRef.current) ro.observe(areaRef.current);
@@ -531,6 +550,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         return;
       }
       if (prefsRef.current.persistent && s.serviceId) {
+        // a different service than the one asked for: that one is gone, drop its record
+        if (serviceId && s.serviceId !== serviceId) void store.remove(serviceId).catch(() => {});
         storeService(svcKey, s.serviceId);
         const now = Date.now();
         serviceRef.current = {
@@ -1299,6 +1320,13 @@ function TerminalSettings({
             <span>
               {t("terminal.persistent")}
               <span className="block text-xs text-muted-foreground">{t("terminal.persistentHint")}</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox checked={draft.keepAlive} onCheckedChange={(v) => setDraft({ ...draft, keepAlive: v === true })} className="mt-0.5" />
+            <span>
+              {t("terminal.keepAlive")}
+              <span className="block text-xs text-muted-foreground">{t("terminal.keepAliveHint")}</span>
             </span>
           </label>
           <DialogFooter className="gap-2">

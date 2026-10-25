@@ -214,6 +214,8 @@ export const en = {
     reconnecting: "Reconnecting to the same shells…",
     persistent: "Keep shells after a disconnect",
     persistentHint: "The device keeps the shells running when the connection drops; reconnecting (or reloading this page) brings them back with their recent output. Back closes them. Takes effect on the next connection.",
+    keepAlive: "Keep an idle session open",
+    keepAliveHint: "Probes the connection every 10 s while nothing is typed or printed. A relay drops a connection that carries no traffic (the usual one after 30 s), which ends a terminal left sitting open. Takes effect on the next connection.",
     search: "Search",
     searchPrev: "Previous match (Shift+Enter)",
     searchNext: "Next match (Enter)",

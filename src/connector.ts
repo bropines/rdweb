@@ -119,6 +119,13 @@ export interface ConnectorConfig {
   myName?: string;
   myId?: string;
   clientVersion?: string;
+  /**
+   * After this many milliseconds without a message either way, send a
+   * `testDelay` probe (the peer echoes it back). A relay drops a connection
+   * that carries nothing — hbbr after 30 s — which a video session never hits
+   * but an idle terminal does. 0 or unset: no probes.
+   */
+  keepAliveMs?: number;
   /** LoginRequest fields specific to the session kind (options, file transfer, ...). */
   loginExtras: () => Omit<LoginInit, "username" | "password" | "myId" | "myName" | "myPlatform" | "version" | "sessionId">;
   /** Error code for a login refusal the dialogue cannot handle (default "login"). */
@@ -152,6 +159,8 @@ export class PeerConnector {
   private loginReject: ((e: Error) => void) | null = null;
   private readonly sessionId = randomSessionId();
   private closed = false;
+  private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
+  private lastActivity = Date.now();
 
   constructor(
     private readonly cfg: ConnectorConfig,
@@ -264,6 +273,7 @@ export class PeerConnector {
     if (this.closed || !relay || !cipher || !relay.isOpen) return;
     const bytes = toBinary(MessageSchema, create(MessageSchema, init));
     relay.send(cipher.seal(bytes));
+    this.lastActivity = Date.now();
   }
 
   /** Fails a pending connect() with `err` (the link itself stays as is). */
@@ -277,6 +287,8 @@ export class PeerConnector {
   close(reason: string): void {
     if (this.closed) return;
     this.closed = true;
+    if (this.keepAliveTimer) clearInterval(this.keepAliveTimer);
+    this.keepAliveTimer = null;
     this.relay?.close(reason);
     this.relay = null;
     this.cipher?.destroy();
@@ -294,8 +306,25 @@ export class PeerConnector {
     this.ev.failed({ reason: err.message, remote: true, retryable: true });
   }
 
+  /**
+   * Keeps an idle link alive: a `testDelay` with from_client set, which the
+   * peer echoes back. Both directions reset a relay's idle timer, so the probe
+   * works even with a peer that ignores it.
+   */
+  private startKeepAlive(): void {
+    const everyMs = this.cfg.keepAliveMs ?? 0;
+    if (everyMs <= 0 || this.keepAliveTimer) return;
+    const tick = Math.max(1_000, Math.round(everyMs / 2));
+    this.keepAliveTimer = setInterval(() => {
+      if (this.closed) return;
+      if (Date.now() - this.lastActivity < tick) return;
+      this.send({ union: { case: "testDelay", value: { time: BigInt(Date.now()), fromClient: true } } });
+    }, tick);
+  }
+
   private onRaw(raw: Uint8Array): void {
     if (!this.cipher || this.closed) return;
+    this.lastActivity = Date.now();
     let msg: Message;
     try {
       msg = fromBinary(MessageSchema, this.cipher.open(raw));
@@ -391,6 +420,7 @@ export class PeerConnector {
   }
 
   private onLoggedIn(pi: PeerInfo): void {
+    this.startKeepAlive();
     this.ev.loggedIn(pi);
     const resolve = this.loginResolve;
     this.loginResolve = this.loginReject = null;
