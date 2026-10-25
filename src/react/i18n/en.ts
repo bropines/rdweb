@@ -227,6 +227,8 @@ export const en = {
     adminOpen: "Open",
     adminBadge: "Administrator",
     adminBadgeHint: "The shells of this session run under the device's own account.",
+    images: "Draw inline images",
+    imagesHint: "SIXEL and iTerm's protocol, as timg, chafa and some plotting tools emit them. Costs a decoder download on the next connection; off, those sequences stay invisible.",
     keepAlive: "Keep an idle session open",
     keepAliveHint: "Probes the connection every 10 s while nothing is typed or printed. A relay drops a connection that carries no traffic (the usual one after 30 s), which ends a terminal left sitting open. Takes effect on the next connection.",
     search: "Search",

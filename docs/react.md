@@ -358,6 +358,13 @@ Such a session is marked in the header and in the list of remembered shells. The
 password is held in the page's memory and written nowhere, so reattaching after
 a reload asks for it again.
 
+"Draw inline images" is on by default: SIXEL and iTerm's image protocol, which
+is what `timg`, `chafa` and some plotting tools emit. The decoder is fetched
+only when the setting is on, and it draws under the WebGL renderer as well as
+the DOM one. The terminal also answers the pixel-size reports (`CSI 14/16/18 t`)
+those tools ask for to scale an image to the cells. Images are capped at 32 MB
+of storage and 8 MB per image, after which the oldest ones become placeholders.
+
 "Keep an idle session open" is on by default and probes the connection every
 10 seconds while nothing is typed or printed. A shell sitting idle sends no
 traffic, and a relay closes a connection that carries none (hbbr after 30 s),

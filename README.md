@@ -73,6 +73,8 @@ with WebCodecs. It is three things:
   page reload, and offers to return to shells that are still running.
 - Search, clickable links, copy on select, right-click paste, Shift+Enter
   for CLIs, font settings and built-in Nerd Font icons for prompts.
+- Inline images: SIXEL and iTerm's protocol, so `timg`, `chafa` and friends
+  draw for real.
 
 **Files**
 
