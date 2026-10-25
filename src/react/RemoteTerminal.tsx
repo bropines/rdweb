@@ -36,6 +36,9 @@ const MAX_FONT = 32;
 const RESIZE_SETTLE_MS = 150;
 /** Idle probe interval; hbbr drops a relay connection after 30 s of silence. */
 const KEEPALIVE_MS = 10_000;
+/** Inline images: caps for a browser tab rather than the addon's desktop-sized defaults. */
+const IMAGE_STORAGE_MB = 32;
+const IMAGE_SIZE_LIMIT = 8 << 20;
 const LONG_PRESS_MS = 450;
 const TAP_SLOP_PX = 6;
 
@@ -64,6 +67,8 @@ export interface TerminalPrefs {
   optionAsAlt: boolean;
   /** Touch screens: send each letter as it is typed, not a whole word once the keyboard commits it. */
   instantInput: boolean;
+  /** Draw inline images (SIXEL and iTerm's protocol), as timg, chafa or a plotting tool emit them. */
+  images: boolean;
 }
 
 const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
@@ -76,6 +81,7 @@ const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
   rightClickPaste: true,
   optionAsAlt: true,
   instantInput: true,
+  images: true,
 };
 
 function loadTerminalPrefs(storageKey: string): TerminalPrefs {
@@ -92,6 +98,7 @@ function loadTerminalPrefs(storageKey: string): TerminalPrefs {
       rightClickPaste: v.rightClickPaste !== false,
       optionAsAlt: v.optionAsAlt !== false,
       instantInput: v.instantInput !== false,
+      images: v.images !== false,
     };
   } catch {
     return { ...DEFAULT_TERMINAL_PREFS };
@@ -174,6 +181,7 @@ type XtermLib = {
   SearchAddon: typeof import("@xterm/addon-search").SearchAddon;
   WebLinksAddon: typeof import("@xterm/addon-web-links").WebLinksAddon;
   Unicode11Addon: typeof import("@xterm/addon-unicode11").Unicode11Addon;
+  ImageAddon: typeof import("@xterm/addon-image").ImageAddon | null;
   /** null when it failed to load: the DOM renderer. */
   WebglAddon: typeof import("@xterm/addon-webgl").WebglAddon | null;
 };
@@ -360,6 +368,11 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     term.loadAddon(new lib.Unicode11Addon());
     term.unicode.activeVersion = "11";
     term.loadAddon(fit);
+    // SIXEL and iTerm inline images (timg, chafa, plotting tools). Before open(),
+    // and it draws under the WebGL renderer as well as the DOM one.
+    if (lib.ImageAddon) {
+      term.loadAddon(new lib.ImageAddon({ storageLimit: IMAGE_STORAGE_MB, sixelSizeLimit: IMAGE_SIZE_LIMIT, iipSizeLimit: IMAGE_SIZE_LIMIT }));
+    }
     term.open(el);
     // WebGL draws box drawing, blocks and powerline glyphs itself, so frames
     // and TUIs have no gaps whatever the font; without WebGL, the DOM renderer.
@@ -453,18 +466,28 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     let opened = false;
     let ro: ResizeObserver | null = null;
     void (async () => {
-      const [{ Terminal }, { FitAddon }, { SearchAddon }, { WebLinksAddon }, { Unicode11Addon }, webgl] = await Promise.all([
+      const [{ Terminal }, { FitAddon }, { SearchAddon }, { WebLinksAddon }, { Unicode11Addon }, webgl, image] = await Promise.all([
         import("@xterm/xterm"),
         import("@xterm/addon-fit"),
         import("@xterm/addon-search"),
         import("@xterm/addon-web-links"),
         import("@xterm/addon-unicode11"),
         import("@xterm/addon-webgl").catch(() => null),
+        // the image decoder is only worth its download to someone who wants pictures
+        prefsRef.current.images ? import("@xterm/addon-image").catch(() => null) : null,
       ]);
       if (prefsRef.current.nerdSymbols) await loadNerdSymbols();
       if (disposed) return;
       injectXtermCss();
-      libRef.current = { Terminal, FitAddon, SearchAddon, WebLinksAddon, Unicode11Addon, WebglAddon: webgl?.WebglAddon ?? null };
+      libRef.current = {
+        Terminal,
+        FitAddon,
+        SearchAddon,
+        WebLinksAddon,
+        Unicode11Addon,
+        WebglAddon: webgl?.WebglAddon ?? null,
+        ImageAddon: image?.ImageAddon ?? null,
+      };
       const first = createPane(0);
       if (!first) return;
       // This tab's shells (reload, reconnect), else offer the device's remembered ones.
@@ -554,6 +577,10 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         }
         p.replaying = true;
         p.term.write(data, () => {
+          // The device replays the tail of its buffer, which can end in the middle
+          // of an escape sequence — an unfinished image, say. A String Terminator
+          // closes that half so it cannot swallow the live output that follows.
+          p.term.write("\x1b\\");
           p.replaying = false;
         });
       });
@@ -1469,6 +1496,13 @@ function TerminalSettings({
             <span>
               {t("terminal.persistent")}
               <span className="block text-xs text-muted-foreground">{t("terminal.persistentHint")}</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox checked={draft.images} onCheckedChange={(v) => setDraft({ ...draft, images: v === true })} className="mt-0.5" />
+            <span>
+              {t("terminal.images")}
+              <span className="block text-xs text-muted-foreground">{t("terminal.imagesHint")}</span>
             </span>
           </label>
           <label className="flex items-start gap-2 text-sm">
