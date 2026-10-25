@@ -1,4 +1,4 @@
-import { ArrowDown, ChevronDown, ChevronLeft, ChevronUp, Keyboard, Plus, RefreshCw, Search, Settings2, X } from "lucide-react";
+import { ArrowDown, ChevronDown, ChevronLeft, ChevronUp, Keyboard, Plus, RefreshCw, Search, Settings2, ShieldAlert, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { TerminalSession } from "../terminal.js";
@@ -21,7 +21,15 @@ import { cellAt, extendFrom, selectBetween, wordAt, type Cell } from "./touchSel
 import { useNoPullToRefresh, useVisualViewport } from "./viewport.js";
 import { XTERM_CSS } from "./xtermCss.js";
 
-const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused"];
+const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused", "os-login", "service-mismatch"];
+
+/**
+ * Administrator credentials for an elevated terminal, by service key. In memory
+ * for as long as the page lives and nowhere else: reattaching after a drop needs
+ * them again, and a password like this must not reach any storage. A reload ends
+ * them, and the user is asked again before an elevated service is reattached.
+ */
+const osLogins = new Map<string, { username: string; password: string }>();
 
 const MIN_FONT = 5;
 const MAX_FONT = 32;
@@ -103,17 +111,22 @@ function serviceKey(storageKey: string, serverKey: string, peerId: string): stri
   return `${storageKey}.terminal.service.${serverKey.trim()}.${peerId}`;
 }
 
-function loadService(key: string): string | undefined {
+/** The id, and whether it took an administrator login. Plain ids from older versions still read. */
+function loadService(key: string): { id: string; admin: boolean } | undefined {
   try {
-    return sessionStorage.getItem(key) ?? undefined;
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return undefined;
+    if (!raw.startsWith("{")) return { id: raw, admin: false };
+    const v = JSON.parse(raw) as { id?: unknown; admin?: unknown };
+    return typeof v.id === "string" && v.id ? { id: v.id, admin: v.admin === true } : undefined;
   } catch {
     return undefined;
   }
 }
 
-function storeService(key: string, id: string | null): void {
+function storeService(key: string, v: { id: string; admin: boolean } | null): void {
   try {
-    if (id) sessionStorage.setItem(key, id);
+    if (v) sessionStorage.setItem(key, JSON.stringify(v));
     else sessionStorage.removeItem(key);
   } catch {
     /* storage unavailable */
@@ -217,6 +230,13 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   const serviceRef = useRef<SavedShells | null>(null);
   const [choices, setChoices] = useState<SavedShells[] | null>(null);
   const chooseRef = useRef<((c: { kind: "new" } | { kind: "restore" | "close"; shells: SavedShells }) => void) | null>(null);
+  /** This session runs under the device's own account (an administrator login). */
+  const [admin, setAdmin] = useState(false);
+  const adminRef = useRef(false);
+  /** Asking for the credentials: before reattaching an elevated service, or to open one. */
+  const [askAdmin, setAskAdmin] = useState<{ user: string } | null>(null);
+  const askAdminRef = useRef<((c: { username: string; password: string } | null) => void) | null>(null);
+  const [peerOs, setPeerOs] = useState("");
   const svcKey = serviceKey(storageKey, props.server.key, props.peerId);
   const [conn, setConn] = useState<ConnState>("connecting");
   const [error, setError] = useState("");
@@ -448,9 +468,15 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       const first = createPane(0);
       if (!first) return;
       // This tab's shells (reload, reconnect), else offer the device's remembered ones.
-      let serviceId = prefsRef.current.persistent ? loadService(svcKey) : undefined;
+      // An elevated service is reattached only with its credentials in hand; without
+      // them the device refuses the mismatch, so ask rather than fail.
+      let osLogin = osLogins.get(svcKey);
+      const stored = prefsRef.current.persistent ? loadService(svcKey) : undefined;
+      let serviceId = stored && (!stored.admin || osLogin) ? stored.id : undefined;
       let closing: SavedShells | null = null;
-      if (prefsRef.current.persistent && !serviceId) {
+      // with credentials just given and nothing to reattach to, open the elevated
+      // service straight away instead of asking about the ordinary one
+      if (prefsRef.current.persistent && !serviceId && !osLogin) {
         const saved = await store.list().catch(() => [] as SavedShells[]);
         if (disposed) return;
         if (saved.length) {
@@ -464,9 +490,27 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
             serviceId = choice.shells.serviceId;
             serviceRef.current = choice.shells;
             if (choice.kind === "close") closing = choice.shells;
+            else if (choice.shells.admin && !osLogin) {
+              const creds = await new Promise<{ username: string; password: string } | null>((resolve) => {
+                askAdminRef.current = resolve;
+                setAskAdmin({ user: choice.shells.adminUser ?? "" });
+              });
+              setAskAdmin(null);
+              if (disposed) return;
+              if (creds) {
+                osLogin = creds;
+                osLogins.set(svcKey, creds);
+              } else {
+                // not given: start a fresh ordinary session instead of being refused
+                serviceId = undefined;
+                serviceRef.current = null;
+              }
+            }
           }
         }
       }
+      adminRef.current = !!osLogin;
+      setAdmin(!!osLogin);
       const s = new TerminalSession({
         peerId: props.peerId,
         server: props.server,
@@ -477,6 +521,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         rows: first.term.rows,
         persistent: prefsRef.current.persistent,
         serviceId,
+        osLogin,
         keepAliveMs: prefsRef.current.keepAlive ? KEEPALIVE_MS : 0,
       });
       sessRef.current = s;
@@ -540,6 +585,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         pushRecent(props.peerId, p.hostname || undefined, storageKey);
         props.onConnected?.(screenlessPeer(p));
       }
+      setPeerOs(p?.os ?? "");
       // ConPTY repaints on resize itself: no reflow on top of it
       if (p?.os === "windows") for (const pane of panes.current.values()) pane.term.options.windowsPty = { backend: "conpty" };
       if (closing) {
@@ -552,12 +598,14 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       if (prefsRef.current.persistent && s.serviceId) {
         // a different service than the one asked for: that one is gone, drop its record
         if (serviceId && s.serviceId !== serviceId) void store.remove(serviceId).catch(() => {});
-        storeService(svcKey, s.serviceId);
+        storeService(svcKey, { id: s.serviceId, admin: !!osLogin });
         const now = Date.now();
         serviceRef.current = {
           serviceId: s.serviceId,
           hostname: p?.hostname || undefined,
           tabs: 1 + s.restorable.length,
+          admin: osLogin ? true : undefined,
+          adminUser: osLogin?.username,
           createdAt: serviceRef.current?.serviceId === s.serviceId ? serviceRef.current.createdAt : now,
           updatedAt: now,
         };
@@ -621,9 +669,20 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   /** The shells are gone (or ended on purpose): drop them from both stores. */
   const forget = () => {
     storeService(svcKey, null);
+    osLogins.delete(svcKey);
     const id = serviceRef.current?.serviceId;
     serviceRef.current = null;
     if (id) void store.remove(id).catch(() => {});
+  };
+
+  /** Reopens the session under the device's own account with these credentials. */
+  const openAsAdmin = (creds: { username: string; password: string }) => {
+    osLogins.set(svcKey, creds);
+    // the elevated shells are a service of their own: this one stays as it is
+    storeService(svcKey, null);
+    serviceRef.current = null;
+    setAskAdmin(null);
+    props.onReconnect();
   };
 
   /** Back: end the shells (not kept for a reattach). */
@@ -971,7 +1030,24 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         </Button>
         <div className="min-w-0 flex-1 truncate text-sm font-medium">
           {t("terminal.title")} · {title}
+          {admin && (
+            <span className="ml-2 rounded border border-amber-400/50 bg-amber-400/15 px-1.5 py-0.5 align-middle text-[11px] font-semibold uppercase tracking-wide text-amber-300" title={t("terminal.adminBadgeHint")}>
+              {t("terminal.adminBadge")}
+            </span>
+          )}
         </div>
+        {ready && !admin && peerOs === "windows" && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="text-white hover:bg-white/10 hover:text-white"
+            aria-label={t("terminal.admin")}
+            title={t("terminal.admin")}
+            onClick={() => setAskAdmin({ user: "" })}
+          >
+            <ShieldAlert className="h-5 w-5" />
+          </Button>
+        )}
         {touch && ready && keysHidden && (
           <Button
             size="icon"
@@ -993,6 +1069,26 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         </Button>
       </div>
       <TerminalSettings open={settingsOpen} onOpenChange={setSettingsOpen} prefs={prefs} onApply={(p) => void applyPrefs(p)} />
+      {askAdmin && (
+        <AdminLogin
+          user={askAdmin.user}
+          onSubmit={(creds) => {
+            const waiting = askAdminRef.current;
+            askAdminRef.current = null;
+            if (waiting) {
+              // the chooser is waiting to reattach an elevated service
+              osLogins.set(svcKey, creds);
+              waiting(creds);
+            } else openAsAdmin(creds);
+          }}
+          onCancel={() => {
+            const waiting = askAdminRef.current;
+            askAdminRef.current = null;
+            setAskAdmin(null);
+            waiting?.(null);
+          }}
+        />
+      )}
       {ready && (
         <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-white/10 px-2 py-1" role="tablist" aria-label={t("terminal.tabs")}>
           {tabs.map((tab, i) => (
@@ -1139,6 +1235,11 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
                       <div className="truncate font-medium">
                         {c.hostname ? `${c.hostname} · ` : ""}
                         {t("terminal.saved.item", { count: c.tabs })}
+                        {c.admin && (
+                          <span className="ml-2 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 align-middle text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                            {t("terminal.adminBadge")}
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {t("terminal.saved.when", { time: new Date(c.updatedAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) })}
@@ -1220,6 +1321,54 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The credentials for an elevated terminal. The device logs them on itself,
+ * refuses an account that is not an administrator, rate-limits the attempts and
+ * records them; nothing here is stored, and the password lives only in memory
+ * for as long as the page does.
+ */
+function AdminLogin({ user, onSubmit, onCancel }: { user: string; onSubmit: (c: { username: string; password: string }) => void; onCancel: () => void }) {
+  const { t } = useI18n();
+  const [username, setUsername] = useState(user);
+  const [password, setPassword] = useState("");
+  useEffect(() => setUsername(user), [user]);
+  return (
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className={cn(SCOPE, "max-w-[calc(100vw-2rem)] sm:max-w-md")} closeLabel={t("common.close")}>
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (username.trim()) onSubmit({ username: username.trim(), password });
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{t("terminal.admin")}</DialogTitle>
+            <DialogDescription>{t("terminal.adminDesc")}</DialogDescription>
+          </DialogHeader>
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">{t("terminal.adminWarning")}</p>
+          <div className="space-y-1.5">
+            <Label htmlFor="rdweb-term-admin-user">{t("terminal.adminUser")}</Label>
+            <Input id="rdweb-term-admin-user" autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Administrator" autoFocus />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="rdweb-term-admin-pw">{t("terminal.adminPassword")}</Label>
+            <Input id="rdweb-term-admin-pw" type="password" autoComplete="off" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={onCancel}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="submit" disabled={!username.trim()}>
+              {t("terminal.adminOpen")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

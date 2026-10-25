@@ -349,6 +349,15 @@ for was gone). A dropped connection never removes anything — the shells are
 very probably still running, and with a server-side store `remove` deletes
 them from the account, for every browser the user has.
 
+On a Windows device the header offers "Open as administrator": the shells then
+run under the device's own account instead of the signed-in user's. It asks for
+a Windows administrator account of that machine, which the device verifies
+itself (see [library.md](library.md#an-elevated-shell-windows)), and reopens the
+session — the ordinary shells stay where they are, as a service of their own.
+Such a session is marked in the header and in the list of remembered shells. The
+password is held in the page's memory and written nowhere, so reattaching after
+a reload asks for it again.
+
 "Keep an idle session open" is on by default and probes the connection every
 10 seconds while nothing is typed or printed. A shell sitting idle sends no
 traffic, and a relay closes a connection that carries none (hbbr after 30 s),

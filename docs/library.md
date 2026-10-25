@@ -494,6 +494,7 @@ term.closeTerminal(1);
 | `persistent` | `false` | ask the device to keep the shells running when the connection drops |
 | `serviceId` | | the `serviceId` of an earlier session, to reattach to its shells |
 | `keepAliveMs` | `0` (off) | probe the link with a `testDelay` after this long without a message either way |
+| `osLogin` | | `{ username, password }` of a Windows administrator account: the shells run under the device's own account instead of the signed-in user's |
 
 ### Events
 
@@ -561,6 +562,34 @@ const term = new TerminalSession({ peerId, server, keepAliveMs: 10_000 });
 ```
 
 The React terminal sets this by default and offers it as a setting.
+
+### An elevated shell (Windows)
+
+A terminal normally runs as the user signed in at the device: where RustDesk is
+installed as a service it hands the shell to that user's token on purpose, and
+nothing in `OpenTerminal` asks for anything else. The one way to a shell under
+the device's own account (the service's token, usually SYSTEM) is `osLogin` —
+the `os_login` of the login request:
+
+```ts
+const term = new TerminalSession({ peerId, server, osLogin: { username: "Administrator", password } });
+```
+
+The device logs those credentials on itself, refuses the account unless it is an
+administrator of that machine (local or domain; a Microsoft account does not
+work), rate-limits and audits the attempts, and shows the connection to whoever
+is at the machine. A refusal fails `connect()` with the code `os-login`.
+
+Such a service is kept apart from the ordinary one: reattaching to it needs the
+credentials again, and asking for the wrong kind fails with `service-mismatch`.
+Treat the password as the user's: pass it straight through and store it
+nowhere. The React terminal keeps it in memory for the page's lifetime only and
+asks again after a reload.
+
+Whether an operator may open one at all is not a question this library can
+answer — the browser side is whoever is driving it. Decide it on the server,
+where hbbs can ask an HTTP service before it forwards a connection
+(`AUTHZ_URL`), and record it there.
 
 ## checkServer
 

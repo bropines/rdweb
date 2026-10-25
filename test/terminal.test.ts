@@ -156,6 +156,38 @@ describe("TerminalSession", () => {
     expect(closed).toEqual([0, 2, 3]);
     expect(s2.state).toBe("closed");
   });
+
+  it("asks for an elevated shell with the OS credentials, and only when given them", async () => {
+    peerShell();
+    const s = new TerminalSession({
+      peerId: PEER_ID,
+      server: serverConfig(),
+      rememberedHash: sha256(PASSWORD, SALT),
+      osLogin: { username: "Administrator", password: "hunter2" },
+    });
+    await s.connect();
+    expect(net.loginRequests.at(-1)!.osLogin).toMatchObject({ username: "Administrator", password: "hunter2" });
+    s.close();
+
+    peerShell();
+    const plain = new TerminalSession({ peerId: PEER_ID, server: serverConfig(), rememberedHash: sha256(PASSWORD, SALT) });
+    await plain.connect();
+    expect(net.loginRequests.at(-1)!.osLogin).toBeUndefined();
+    plain.close();
+  });
+
+  it("names the device's refusals of an OS login", async () => {
+    for (const [message, code] of [
+      ["Incorrect username or password.", "os-login"],
+      ["Please try 1 minute later", "os-login"],
+      ["Terminal service user mismatch detected.", "service-mismatch"],
+      ["Something else entirely", "login"],
+    ] as const) {
+      resetNet({ loginError: message });
+      const s = new TerminalSession({ peerId: PEER_ID, server: serverConfig(), rememberedHash: sha256(PASSWORD, SALT) });
+      await expect(s.connect()).rejects.toMatchObject({ code });
+    }
+  });
 });
 
 describe("TerminalSession keepalive", () => {

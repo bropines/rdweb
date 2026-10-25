@@ -10,6 +10,14 @@ export interface SavedShells {
   hostname?: string;
   /** Open tabs when last seen. */
   tabs: number;
+  /**
+   * Opened with an administrator login, so the shells run under the device's
+   * own account. Reattaching needs those credentials again; the password is
+   * never stored, only the user name, and a store that cannot keep these two
+   * fields simply loses the hint (the device then refuses the mismatch).
+   */
+  admin?: boolean;
+  adminUser?: string;
   /** Milliseconds since the epoch. */
   createdAt: number;
   updatedAt: number;

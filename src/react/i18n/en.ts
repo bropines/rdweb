@@ -161,6 +161,8 @@ export const en = {
     handshake: "The device could not be verified, so the connection was refused ({{detail}}).",
     "unverified-peer": "The server did not vouch for this device's key, so the connection was refused.",
     refused: "The connection was refused: {{detail}}",
+    "os-login": "The device did not accept that Windows account ({{detail}}). It must be an administrator account of that machine, local or domain; a Microsoft account does not work. Repeated attempts are refused for a while.",
+    "service-mismatch": "Those shells belong to a session of the other kind: an administrator's shells need the administrator credentials, ordinary ones must be opened without them ({{detail}}).",
   },
   toolbar: {
     connection: "Connection details",
@@ -174,6 +176,8 @@ export const en = {
     back: "Leave session",
     reset: "Reset",
     nextDisplay: "Next monitor ({{n}} of {{total}})",
+    display: "Monitor ({{n}} of {{total}})",
+    displayPick: "Pick the monitor to watch.",
   },
   info: {
     title: "Connection",
@@ -214,6 +218,15 @@ export const en = {
     reconnecting: "Reconnecting to the same shells…",
     persistent: "Keep shells after a disconnect",
     persistentHint: "The device keeps the shells running when the connection drops; reconnecting (or reloading this page) brings them back with their recent output. Back closes them. Takes effect on the next connection.",
+    admin: "Open as administrator",
+    adminDesc: "Windows only. The shells then run under the device's own account instead of the signed-in user's.",
+    adminWarning:
+      "The device checks these credentials itself and refuses an account that is not an administrator. It rate-limits the attempts and records them, and shows the connection to whoever is at the machine. The password is kept in this page's memory only, never stored: reattaching after a reload asks for it again.",
+    adminUser: "Windows user name",
+    adminPassword: "Windows password",
+    adminOpen: "Open",
+    adminBadge: "Administrator",
+    adminBadgeHint: "The shells of this session run under the device's own account.",
     keepAlive: "Keep an idle session open",
     keepAliveHint: "Probes the connection every 10 s while nothing is typed or printed. A relay drops a connection that carries no traffic (the usual one after 30 s), which ends a terminal left sitting open. Takes effect on the next connection.",
     search: "Search",
