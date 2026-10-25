@@ -2,6 +2,7 @@ import {
   Activity,
   Ban,
   Camera,
+  Check,
   ClipboardPaste,
   Command,
   Eye,
@@ -12,6 +13,7 @@ import {
   Maximize2,
   MessageSquare,
   Minimize2,
+  Monitor,
   MonitorUp,
   MousePointer2,
   MousePointerClick,
@@ -35,6 +37,7 @@ import {
   isWebCodecsAvailable,
   type AudioState,
   type CloseInfo,
+  type DisplayRect,
   type InputMode,
   type PeerSummary,
   type ScaleMode,
@@ -240,7 +243,7 @@ function settle(result: () => void | Promise<unknown>, onOk: () => void, onError
 
 /* ───────────────────────────── session ───────────────────────────── */
 
-type DialogName = "none" | "password" | "twoFactor" | "clipboard" | "type" | "chat" | "restart";
+type DialogName = "none" | "password" | "twoFactor" | "clipboard" | "type" | "chat" | "restart" | "display";
 
 const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused"];
 
@@ -577,6 +580,14 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
     { id: "inputMode", label: `${t("settings.inputMode")}: ${t(`input.${inputMode}`)}`, icon: MousePointer2, disabled: off, run: () => updateView({ inputMode: nextInput[inputMode] }) },
     { id: "viewMode", label: `${t("settings.viewStyle")}: ${t(`view.${prefs.view.scaleMode}`)}`, icon: Scaling, disabled: off, run: () => updateView({ scaleMode: nextScale[prefs.view.scaleMode] }) },
     {
+      id: "display",
+      label: t("toolbar.display", { n: currentDisplay + 1, total: displays.length }),
+      icon: Monitor,
+      hidden: displays.length < 2,
+      disabled: off,
+      run: () => setDialog("display"),
+    },
+    {
       id: "nextDisplay",
       label: t("toolbar.nextDisplay", { n: currentDisplay + 1, total: displays.length }),
       icon: MonitorUp,
@@ -830,6 +841,37 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
         onSubmit={(text) => s?.sendChat(text)}
         onClose={() => setDialog("none")}
       />
+      <Dialog open={dialog === "display"} onOpenChange={(o) => !o && setDialog("none")}>
+        <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md" closeLabel={t("common.close")}>
+          <DialogHeader>
+            <DialogTitle>{t("settings.monitor")}</DialogTitle>
+            <DialogDescription>{t("toolbar.displayPick")}</DialogDescription>
+          </DialogHeader>
+          <div role="listbox" aria-label={t("settings.monitor")} className="flex flex-col gap-1">
+            {displays.map((d) => {
+              const current = d.index === currentDisplay;
+              return (
+                <Button
+                  key={d.index}
+                  role="option"
+                  aria-selected={current}
+                  variant={current ? "secondary" : "ghost"}
+                  className="h-auto justify-start gap-2 whitespace-normal py-2 text-left"
+                  onClick={() => {
+                    // the monitor already on screen: nothing to switch (it would only reset the video)
+                    if (!current) s?.switchDisplay(d.index);
+                    setDialog("none");
+                  }}
+                >
+                  <Monitor className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 flex-1 break-words">{displayLabel(d)}</span>
+                  {current && <Check className="h-4 w-4 shrink-0" aria-hidden />}
+                </Button>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={dialog === "restart"} onOpenChange={(o) => !o && setDialog("none")}>
         <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md" closeLabel={t("common.close")}>
           <DialogHeader>
@@ -854,6 +896,12 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
       </Dialog>
     </div>
   );
+}
+
+/** "2 · DISPLAY2 (1920×1080)": Windows peers name monitors `\\.\DISPLAY2`, the prefix is dropped. */
+function displayLabel(d: DisplayRect): string {
+  const name = d.name.replace(/^\\\\\.\\/, "");
+  return `${d.index + 1}${name ? ` · ${name}` : ""} (${d.width}×${d.height})`;
 }
 
 function Overlay({ children }: { children: ReactNode }) {

@@ -23,6 +23,7 @@ export type ActionId =
   | "keyboard"
   | "inputMode"
   | "viewMode"
+  | "display"
   | "nextDisplay"
   | "ctrlAltDel"
   | "lockScreen"
@@ -58,7 +59,7 @@ export interface ToolbarAction {
   run: () => void;
 }
 
-export const DEFAULT_PINNED_DESKTOP: ActionId[] = ["settings", "ctrlAltDel", "viewMode", "fullscreen"];
+export const DEFAULT_PINNED_DESKTOP: ActionId[] = ["settings", "display", "ctrlAltDel", "viewMode", "fullscreen"];
 export const DEFAULT_PINNED_TOUCH: ActionId[] = ["keyboard", "inputMode", "settings"];
 
 export interface ToolbarProps {

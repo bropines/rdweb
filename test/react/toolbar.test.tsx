@@ -6,7 +6,7 @@ import { Activity, Camera, FolderOpen, Settings2 } from "lucide-react";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { splitToolbarActions, togglePinned, Toolbar, type ToolbarAction } from "../../src/react/Toolbar.js";
+import { DEFAULT_PINNED_DESKTOP, DEFAULT_PINNED_TOUCH, splitToolbarActions, togglePinned, Toolbar, type ToolbarAction } from "../../src/react/Toolbar.js";
 
 afterEach(cleanup);
 
@@ -59,6 +59,18 @@ describe("toolbar logic", () => {
     // pinned explicitly: keeps its place
     list[4]!.hidden = false;
     expect(splitToolbarActions(list, ["files", "sound"]).pinned.map((a) => a.id)).toEqual(["files", "sound"]);
+  });
+
+  it("pins the monitor picker on desktops by default, and it follows the monitor count", () => {
+    expect(DEFAULT_PINNED_DESKTOP).toContain("display");
+    expect(DEFAULT_PINNED_TOUCH).not.toContain("display");
+    const list = (monitors: number): ToolbarAction[] => [
+      { id: "settings", label: "Settings", icon: Settings2, run: noop },
+      { id: "display", label: "Monitor", icon: Camera, hidden: monitors < 2, run: noop },
+    ];
+    // a single monitor: nothing on the bar, nothing to pin
+    expect(splitToolbarActions(list(1), DEFAULT_PINNED_DESKTOP).pinned.map((a) => a.id)).toEqual(["settings"]);
+    expect(splitToolbarActions(list(3), DEFAULT_PINNED_DESKTOP).pinned.map((a) => a.id)).toEqual(["settings", "display"]);
   });
 
   it("pins at the end and unpins", () => {
