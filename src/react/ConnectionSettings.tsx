@@ -46,21 +46,20 @@ function ConnectionSettingsInner({ open, onOpenChange, storageKey = DEFAULT_STOR
   const inputMode: InputMode = prefs.view.inputMode ?? (touchFirst() ? "trackpad" : "mouse");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn(SCOPE, "max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-md")} closeLabel={t("common.close")}>
+      <DialogContent className={cn(SCOPE, "max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] overflow-y-auto overflow-x-hidden sm:max-w-3xl")} closeLabel={t("common.close")}>
         <DialogHeader>
           <DialogTitle>{t("defaults.title")}</DialogTitle>
           <DialogDescription>{t("defaults.desc")}</DialogDescription>
         </DialogHeader>
-        <div className="space-y-1">
-          <SettingsFields
-            settings={prefs.settings}
-            onSettings={(patch) => update({ ...prefs, settings: { ...prefs.settings, ...patch } })}
-            view={prefs.view}
-            inputMode={inputMode}
-            onView={(patch) => update({ ...prefs, view: { ...prefs.view, ...patch } })}
-            peer={null}
-          />
-        </div>
+        <SettingsFields
+          settings={prefs.settings}
+          onSettings={(patch) => update({ ...prefs, settings: { ...prefs.settings, ...patch } })}
+          view={prefs.view}
+          inputMode={inputMode}
+          onView={(patch) => update({ ...prefs, view: { ...prefs.view, ...patch } })}
+          peer={null}
+          layout="columns"
+        />
         <DialogFooter className="gap-2">
           <Button
             type="button"
