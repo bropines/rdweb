@@ -112,6 +112,11 @@ export interface SettingsFieldsProps {
   peer: PeerSummary | null;
   /** Session only: monitors, resolution, privacy, view only. */
   session?: Omit<SettingsSheetProps, "open" | "onOpenChange" | "settings" | "onSettings" | "view" | "inputMode" | "onView" | "peer" | "ownSettings" | "onResetSettings">;
+  /**
+   * "columns" puts display and control side by side where there is room for
+   * them, which is what a dialog wants; "stack" (the default) is one column.
+   */
+  layout?: "stack" | "columns";
 }
 
 const ALL_CODEC_CHOICES = ["vp9", "av1", "h264", "h265", "vp8"] as const;
@@ -228,6 +233,15 @@ function useSettingsGroups(p: SettingsFieldsProps): { display: ReactNode; contro
 
 export function SettingsFields(p: SettingsFieldsProps) {
   const { display, control } = useSettingsGroups(p);
+  if (p.layout === "columns")
+    return (
+      // two columns only where they fit: a monitor name and a resolution need the room
+      <div className="grid min-w-0 gap-x-8 gap-y-4 md:grid-cols-2">
+        <section className="min-w-0 space-y-1">{display}</section>
+        {/* stacked, the two groups need a line between them; side by side they do not */}
+        <section className="min-w-0 space-y-1 max-md:border-t max-md:pt-3">{control}</section>
+      </div>
+    );
   return (
     <>
       {display}
@@ -240,7 +254,6 @@ export function SettingsFields(p: SettingsFieldsProps) {
 export function SettingsSheet(p: SettingsSheetProps) {
   const { t } = useI18n();
   const { open, onOpenChange, settings, onSettings, view, inputMode, onView, peer, ownSettings, onResetSettings, ...session } = p;
-  const { display, control } = useSettingsGroups({ settings, onSettings, view, inputMode, onView, peer, session });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] overflow-y-auto overflow-x-hidden sm:max-w-3xl" closeLabel={t("common.close")}>
@@ -248,12 +261,7 @@ export function SettingsSheet(p: SettingsSheetProps) {
           <DialogTitle>{t("settings.title")}</DialogTitle>
           <DialogDescription>{t(ownSettings ? "settings.deviceOwn" : "settings.deviceDefaults")}</DialogDescription>
         </DialogHeader>
-        {/* two columns only where they fit: a monitor name and a resolution need the room */}
-        <div className="grid min-w-0 gap-x-8 gap-y-4 md:grid-cols-2">
-          <section className="min-w-0 space-y-1">{display}</section>
-          {/* stacked, the two groups need a line between them; side by side they do not */}
-          <section className="min-w-0 space-y-1 max-md:border-t max-md:pt-3">{control}</section>
-        </div>
+        <SettingsFields settings={settings} onSettings={onSettings} view={view} inputMode={inputMode} onView={onView} peer={peer} session={session} layout="columns" />
         <DialogFooter className="gap-2">
           {ownSettings && onResetSettings && (
             <Button type="button" variant="outline" onClick={onResetSettings}>
