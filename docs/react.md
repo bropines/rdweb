@@ -364,6 +364,17 @@ only when the setting is on, and it draws under the WebGL renderer as well as
 the DOM one. The terminal also answers the pixel-size reports (`CSI 14/16/18 t`)
 those tools ask for to scale an image to the cells. Images are capped at 32 MB
 of storage and 8 MB per image, after which the oldest ones become placeholders.
+Turning the setting on applies to the next connection, since the decoder loads
+with the session; reconnect a terminal that is already open.
+
+**Not from a Windows device.** A shell there runs under a pseudoconsole, which
+RustDesk opens without `PSEUDOCONSOLE_PASSTHROUGH_MODE`: it parses the output
+into a text screen buffer and generates the stream afresh from it, and that
+buffer has no notion of an image. The sequence is gone before it reaches
+RustDesk, whatever produced it — the shell itself, or a child process writing
+raw bytes. macOS and Linux devices use a real pty, which passes it through.
+Nothing in this library can recover it; the device's own pseudoconsole would
+have to ask for passthrough.
 
 "Keep an idle session open" is on by default and probes the connection every
 10 seconds while nothing is typed or printed. A shell sitting idle sends no

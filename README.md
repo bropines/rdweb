@@ -74,7 +74,8 @@ with WebCodecs. It is three things:
 - Search, clickable links, copy on select, right-click paste, Shift+Enter
   for CLIs, font settings and built-in Nerd Font icons for prompts.
 - Inline images: SIXEL and iTerm's protocol, so `timg`, `chafa` and friends
-  draw for real.
+  draw for real — on macOS and Linux devices; a Windows pseudoconsole drops
+  such sequences before they leave the device.
 
 **Files**
 
