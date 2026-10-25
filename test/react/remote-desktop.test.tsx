@@ -19,6 +19,7 @@ const fakes = vi.hoisted(() => {
     updateSettings = vi.fn();
     submitTwoFactor = vi.fn();
     resumeAudio = vi.fn();
+    switchDisplay = vi.fn();
     audioState = "off";
     constructor(public opts: SessionOptions) {
       FakeSession.all.push(this);
@@ -270,5 +271,39 @@ describe("<RemoteDesktop>", () => {
     // another device starts from the defaults
     render(<RemoteDesktop peerId="888" server={server} onLeave={vi.fn()} />);
     expect(session().opts.settings).toMatchObject({ codec: "av1", disableAudio: false });
+  });
+  it("picks a monitor straight from a list and switches to that one", async () => {
+    const monitors = [
+      { index: 0, x: 0, y: 0, width: 1920, height: 1080, name: "\\\\.\\DISPLAY1", online: true, cursorEmbedded: false, originalWidth: 0, originalHeight: 0, scale: 1 },
+      { index: 1, x: 1920, y: 0, width: 2560, height: 1440, name: "\\\\.\\DISPLAY2", online: true, cursorEmbedded: false, originalWidth: 0, originalHeight: 0, scale: 1 },
+      { index: 2, x: 4480, y: 0, width: 1280, height: 1024, name: "", online: true, cursorEmbedded: false, originalWidth: 0, originalHeight: 0, scale: 1 },
+    ];
+    render(<RemoteDesktop peerId="1" server={server} onLeave={vi.fn()} />);
+    const bar = () => screen.getByRole("toolbar", { name: "office-pc" });
+    act(() => session().emit("state", { state: "connected" }));
+    // one monitor: no picker on the bar
+    await act(async () => session().emit("connected", { peer: { ...peer, displays: monitors.slice(0, 1) }, rememberedHash: null }));
+    expect(within(bar()).queryByRole("button", { name: /^Monitor \(/ })).toBeNull();
+
+    await act(async () => session().emit("connected", { peer: { ...peer, displays: monitors, currentDisplay: 1 }, rememberedHash: null }));
+    act(() => session().emit("display", { display: monitors[1], resolutions: [] }));
+    // pinned by default, so it is on the bar itself
+    fireEvent.click(within(bar()).getByRole("button", { name: "Monitor (2 of 3)" }));
+    const dlg = screen.getByRole("dialog", { name: "Monitor" });
+    const options = within(dlg).getAllByRole("option");
+    expect(options.map((o) => o.textContent)).toEqual(["1 · DISPLAY1 (1920×1080)", "2 · DISPLAY2 (2560×1440)", "3 (1280×1024)"]);
+    expect(options.map((o) => o.getAttribute("aria-selected"))).toEqual(["false", "true", "false"]);
+
+    // the current one: just closes
+    fireEvent.click(options[1]!);
+    expect(session().switchDisplay).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Monitor" })).toBeNull();
+
+    // straight to the third, not through the next one
+    fireEvent.click(within(bar()).getByRole("button", { name: "Monitor (2 of 3)" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Monitor" })).getByRole("option", { name: /^3/ }));
+    expect(session().switchDisplay).toHaveBeenCalledTimes(1);
+    expect(session().switchDisplay).toHaveBeenCalledWith(2);
+    expect(screen.queryByRole("dialog", { name: "Monitor" })).toBeNull();
   });
 });

@@ -28,6 +28,8 @@ interface PeerBehaviour {
   /** server sends no signed key */
   noServerKey?: boolean;
   requirePassword?: boolean;
+  /** monitors reported in PeerInfo (default: one) */
+  displays?: { x: number; y: number; width: number; height: number; name: string; online: boolean }[];
 }
 
 let behaviour: PeerBehaviour = {};
@@ -167,7 +169,7 @@ class FakeSocket {
                 hostname: "box",
                 platform: "Windows",
                 version: "1.4.3",
-                displays: [{ x: 0, y: 0, width: 1920, height: 1080, name: "DISPLAY1", online: true }],
+                displays: behaviour.displays ?? [{ x: 0, y: 0, width: 1920, height: 1080, name: "DISPLAY1", online: true }],
                 currentDisplay: 0,
                 encoding: { h264: true, vp8: true },
               },
@@ -274,6 +276,33 @@ describe("Session", () => {
     s.on("password", asked);
     await s.connect();
     expect(asked).not.toHaveBeenCalled();
+    s.close();
+  });
+
+  it("switches straight to the chosen monitor: SwitchDisplay, then a single-monitor capture set", async () => {
+    behaviour.displays = [
+      { x: 0, y: 0, width: 1920, height: 1080, name: "\\\\.\\DISPLAY1", online: true },
+      { x: 1920, y: 0, width: 2560, height: 1440, name: "\\\\.\\DISPLAY2", online: true },
+      { x: 4480, y: 0, width: 1280, height: 1024, name: "\\\\.\\DISPLAY3", online: true },
+    ];
+    const s = newSession({ rememberedHash: sha256(PASSWORD, SALT) });
+    await s.connect();
+    expect(s.peer?.displays.map((d) => d.index)).toEqual([0, 1, 2]);
+    const misc = () => peerLog.filter((m) => m.union.case === "misc").map((m) => (m.union.value as { union: { case: string; value: unknown } }).union);
+
+    // 0 -> 2 directly, not through 1
+    s.switchDisplay(2);
+    await new Promise((r) => setTimeout(r, 10));
+    const sent = misc().filter((u) => u.case === "switchDisplay" || u.case === "captureDisplays");
+    expect(sent.map((u) => u.case)).toEqual(["switchDisplay", "captureDisplays"]);
+    expect(sent[0]!.value).toMatchObject({ display: 2 });
+    expect(sent[1]!.value).toMatchObject({ set: [2], add: [], sub: [] });
+
+    // an index the peer never listed is not sent
+    s.switchDisplay(3);
+    s.switchDisplay(-1);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(misc().filter((u) => u.case === "switchDisplay")).toHaveLength(1);
     s.close();
   });
 

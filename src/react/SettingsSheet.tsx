@@ -8,7 +8,7 @@ import { Button } from "./ui/button.js";
 import { Label } from "./ui/label.js";
 import { Separator, Switch } from "./ui/misc.js";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select.js";
-import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "./ui/sheet.js";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog.js";
 import type { ViewPrefs } from "./prefs.js";
 
 export interface SettingsSheetProps {
@@ -56,11 +56,13 @@ function Toggle({ label, hint, checked, onChange, disabled }: { label: string; h
 }
 
 function Pick<T extends string>({ label, value, options, onChange, disabled }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; disabled?: boolean }) {
+  // min-w-0 all the way down: a trigger's text does not wrap, so without it the
+  // longest option (a monitor name with its resolution) sets the column's width
   return (
-    <div className="grid gap-1.5 py-1.5">
+    <div className="grid min-w-0 gap-1.5 py-1.5">
       <Label className="text-xs text-muted-foreground">{label}</Label>
       <Select value={value} onValueChange={(v) => onChange(v as T)} disabled={disabled}>
-        <SelectTrigger className="h-9 w-full" aria-label={label}>
+        <SelectTrigger className="h-9 w-full min-w-0" aria-label={label}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -77,7 +79,7 @@ function Pick<T extends string>({ label, value, options, onChange, disabled }: {
 
 function Slider({ label, value, min, max, step, unit, onChange }: { label: string; value: number; min: number; max: number; step: number; unit: string; onChange: (v: number) => void }) {
   return (
-    <div className="grid gap-1 py-1.5">
+    <div className="grid min-w-0 gap-1 py-1.5">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{label}</span>
         <span className="tabular-nums">
@@ -99,7 +101,7 @@ function Slider({ label, value, min, max, step, unit, onChange }: { label: strin
   );
 }
 
-/** The connection settings shared by a session's sheet and the defaults dialog. */
+/** The connection settings shared by a session's settings dialog and the defaults dialog. */
 export interface SettingsFieldsProps {
   settings: SessionSettings;
   onSettings: (patch: Partial<SessionSettings>) => void;
@@ -114,7 +116,8 @@ export interface SettingsFieldsProps {
 
 const ALL_CODEC_CHOICES = ["vp9", "av1", "h264", "h265", "vp8"] as const;
 
-export function SettingsFields(p: SettingsFieldsProps) {
+/** The two groups of fields, so a dialog can lay them out side by side. */
+function useSettingsGroups(p: SettingsFieldsProps): { display: ReactNode; control: ReactNode } {
   const { t } = useI18n();
   const s = p.settings;
   const sess = p.session;
@@ -123,7 +126,7 @@ export function SettingsFields(p: SettingsFieldsProps) {
   const resolutions = p.peer?.resolutions ?? [];
   const displays = p.peer?.displays ?? [];
   const touch = p.inputMode !== "mouse";
-  return (
+  const display = (
     <>
       <h3 className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("settings.display")}</h3>
       {sess && displays.length > 1 && (
@@ -185,8 +188,10 @@ export function SettingsFields(p: SettingsFieldsProps) {
       <Toggle label={t("settings.followRemoteCursor")} checked={s.followRemoteCursor} onChange={(v) => p.onSettings({ followRemoteCursor: v })} />
       <Toggle label={t("settings.followRemoteWindow")} checked={s.followRemoteWindow} onChange={(v) => p.onSettings({ followRemoteWindow: v })} />
       <Toggle label={t("settings.showStats")} checked={p.view.showStats} onChange={(v) => p.onView({ showStats: v })} />
-
-      <Separator className="my-2" />
+    </>
+  );
+  const control = (
+    <>
       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("settings.control")}</h3>
       <Pick<InputMode>
         label={t("settings.inputMode")}
@@ -218,30 +223,53 @@ export function SettingsFields(p: SettingsFieldsProps) {
       {sess?.canBlockInput && <Toggle label={t("settings.blockInput")} checked={sess.blockInputOn} onChange={sess.onBlockInput} />}
     </>
   );
+  return { display, control };
+}
+
+export function SettingsFields(p: SettingsFieldsProps) {
+  const { display, control } = useSettingsGroups(p);
+  return (
+    <>
+      {display}
+      <Separator className="my-2" />
+      {control}
+    </>
+  );
 }
 
 export function SettingsSheet(p: SettingsSheetProps) {
   const { t } = useI18n();
   const { open, onOpenChange, settings, onSettings, view, inputMode, onView, peer, ownSettings, onResetSettings, ...session } = p;
-  void open;
-  void onOpenChange;
+  const { display, control } = useSettingsGroups({ settings, onSettings, view, inputMode, onView, peer, session });
   return (
-    <Sheet open={p.open} onOpenChange={p.onOpenChange}>
-      <SheetContent className="sm:max-w-sm" closeLabel={t("common.close")}>
-        <SheetHeader>
-          <SheetTitle>{t("settings.title")}</SheetTitle>
-          <SheetDescription className="text-xs">{t(ownSettings ? "settings.deviceOwn" : "settings.deviceDefaults")}</SheetDescription>
-        </SheetHeader>
-        <SheetBody className="space-y-1">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] overflow-y-auto overflow-x-hidden sm:max-w-3xl" closeLabel={t("common.close")}>
+        <DialogHeader>
+          <DialogTitle>{t("settings.title")}</DialogTitle>
+          <DialogDescription>{t(ownSettings ? "settings.deviceOwn" : "settings.deviceDefaults")}</DialogDescription>
+        </DialogHeader>
+        {/* two columns only where they fit: a monitor name and a resolution need the room */}
+        <div className="grid min-w-0 gap-x-8 gap-y-4 md:grid-cols-2">
+          <section className="min-w-0 space-y-1">{display}</section>
+          {/* stacked, the two groups need a line between them; side by side they do not */}
+          <section className="min-w-0 space-y-1 max-md:border-t max-md:pt-3">{control}</section>
+        </div>
+        <DialogFooter className="gap-2">
           {ownSettings && onResetSettings && (
-            <Button variant="outline" size="sm" className="mb-1 w-full" onClick={onResetSettings}>
+            <Button type="button" variant="outline" onClick={onResetSettings}>
               <RotateCcw className="mr-2 h-4 w-4" />
               {t("settings.resetToDefaults")}
             </Button>
           )}
-          <SettingsFields settings={settings} onSettings={onSettings} view={view} inputMode={inputMode} onView={onView} peer={peer} session={session} />
-        </SheetBody>
-      </SheetContent>
-    </Sheet>
+          <Button type="button" onClick={() => onOpenChange(false)}>
+            {t("common.done")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
+
+/** The session settings as a centred modal; the same component as SettingsSheet. */
+export const SettingsDialog = SettingsSheet;
+export type SettingsDialogProps = SettingsSheetProps;

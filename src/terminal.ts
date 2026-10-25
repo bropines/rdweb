@@ -35,6 +35,21 @@ export interface TerminalOptions {
   persistent?: boolean;
   /** The `serviceId` of an earlier session to reattach to its shells. */
   serviceId?: string;
+  /**
+   * Windows: run the shells under the device's own account (the service's
+   * token, usually SYSTEM) instead of the signed-in user's, by proving an
+   * administrator account of that device. The device logs the credentials on,
+   * refuses them unless the account is an administrator, rate-limits the
+   * attempts and audits them; it keeps such a service apart from the ordinary
+   * one, so reattaching to it needs the credentials again. Not stored here.
+   */
+  osLogin?: { username: string; password: string };
+  /**
+   * Keep an idle link alive with a `testDelay` probe every N ms. A shell that
+   * prints nothing and is typed into by nobody carries no traffic at all, and
+   * a relay drops such a connection (hbbr after 30 s). 0 or unset: no probes.
+   */
+  keepAliveMs?: number;
 }
 
 export interface TerminalPeer {
@@ -92,11 +107,20 @@ export class TerminalSession {
         myName: opts.myName,
         myId: opts.myId,
         clientVersion: opts.clientVersion,
+        keepAliveMs: opts.keepAliveMs,
         loginExtras: () => ({
           option: opts.persistent ? { terminalPersistent: OptionMessage_BoolOption.Yes } : undefined,
+          osLogin: opts.osLogin ? { username: opts.osLogin.username, password: opts.osLogin.password } : undefined,
           union: { case: "terminal", value: { serviceId: opts.serviceId ?? "" } },
         }),
-        loginErrorCode: (e) => (/no permission|not allowed|disabled/i.test(e) ? "permission-denied" : "login"),
+        loginErrorCode: (e) => {
+          if (/no permission|not allowed|disabled/i.test(e)) return "permission-denied";
+          // the device's own words for a refused or rate-limited os_login
+          if (/incorrect username or password|try 1 minute later/i.test(e)) return "os-login";
+          // asking for a SYSTEM service with a user login, or the other way round
+          if (/terminal service user mismatch/i.test(e)) return "service-mismatch";
+          return "login";
+        },
       },
       {
         state: (state) => this.setState(state),

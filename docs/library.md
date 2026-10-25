@@ -493,6 +493,8 @@ term.closeTerminal(1);
 | `cols`, `rows` | `80`, `24` | size of terminal 0 in character cells |
 | `persistent` | `false` | ask the device to keep the shells running when the connection drops |
 | `serviceId` | | the `serviceId` of an earlier session, to reattach to its shells |
+| `keepAliveMs` | `0` (off) | probe the link with a `testDelay` after this long without a message either way |
+| `osLogin` | | `{ username, password }` of a Windows administrator account: the shells run under the device's own account instead of the signed-in user's |
 
 ### Events
 
@@ -538,6 +540,56 @@ for (const id of again.restorable) await again.openTerminal(id, cols, rows);
 
 The React terminal (`mode="terminal"`) does all of this, including
 reconnecting on its own after a drop; see [react.md](react.md#terminal-mode).
+
+Keep the `serviceId` of a dropped session. A lost connection looks exactly
+like a peer hanging up — a relay timing out, a laptop going to sleep and the
+peer itself all close the socket the same way — and nothing in the protocol
+lists a device's services, so the id is the only way back to shells that are
+still running. Drop the id when the shells are known to be over (every one
+exited), or when a reattach comes back with a `serviceId` the device chose
+itself, which means the one asked for was gone.
+
+### Keeping an idle session open
+
+A shell nobody types into and that prints nothing carries no traffic at all,
+and a relay drops a connection that carries none — hbbr after 30 seconds. A
+video session never notices this; a terminal left open does. `keepAliveMs`
+sends a `testDelay` probe after that long without a message either way (the
+peer echoes it back, and traffic in either direction is enough):
+
+```ts
+const term = new TerminalSession({ peerId, server, keepAliveMs: 10_000 });
+```
+
+The React terminal sets this by default and offers it as a setting.
+
+### An elevated shell (Windows)
+
+A terminal normally runs as the user signed in at the device: where RustDesk is
+installed as a service it hands the shell to that user's token on purpose, and
+nothing in `OpenTerminal` asks for anything else. The one way to a shell under
+the device's own account (the service's token, usually SYSTEM) is `osLogin` —
+the `os_login` of the login request:
+
+```ts
+const term = new TerminalSession({ peerId, server, osLogin: { username: "Administrator", password } });
+```
+
+The device logs those credentials on itself, refuses the account unless it is an
+administrator of that machine (local or domain; a Microsoft account does not
+work), rate-limits and audits the attempts, and shows the connection to whoever
+is at the machine. A refusal fails `connect()` with the code `os-login`.
+
+Such a service is kept apart from the ordinary one: reattaching to it needs the
+credentials again, and asking for the wrong kind fails with `service-mismatch`.
+Treat the password as the user's: pass it straight through and store it
+nowhere. The React terminal keeps it in memory for the page's lifetime only and
+asks again after a reload.
+
+Whether an operator may open one at all is not a question this library can
+answer — the browser side is whoever is driving it. Decide it on the server,
+where hbbs can ask an HTTP service before it forwards a connection
+(`AUTHZ_URL`), and record it there.
 
 ## checkServer
 
