@@ -369,6 +369,9 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       allowProposedApi: true, // unicode11 and search decorations
       rightClickSelectsWord: false,
       macOptionIsMeta: prefsRef.current.optionAsAlt,
+      // OSC 8 hyperlinks come from the remote side: same http(s)-only rule as
+      // detected links (xterm's default opens any scheme after a prompt).
+      linkHandler: { activate: openLink },
       windowsPty: sessRef.current?.peer?.os === "windows" ? { backend: "conpty" } : undefined,
     });
     const fit = new lib.FitAddon();
