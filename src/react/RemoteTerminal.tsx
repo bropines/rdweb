@@ -16,12 +16,14 @@ import { Label } from "./ui/label.js";
 import { Checkbox } from "./ui/misc.js";
 import { isModifier, modifyText, TERMINAL_LAYOUT, terminalKey, type TermMods } from "./keys.js";
 import { attachInstantInput } from "./instantInput.js";
+import { osc52Handler } from "./osc52.js";
+import { APPROVAL_ERRORS, approvalErrorCode } from "./approval.js";
 import { closeAction, localShellStore, type SavedShells } from "./shellStore.js";
 import { cellAt, extendFrom, selectBetween, wordAt, type Cell } from "./touchSelect.js";
 import { useNoPullToRefresh, useVisualViewport } from "./viewport.js";
 import { XTERM_CSS } from "./xtermCss.js";
 
-const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused", "os-login", "service-mismatch"];
+const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused", "os-login", "service-mismatch", ...APPROVAL_ERRORS];
 
 /**
  * Administrator credentials for an elevated terminal, by service key. In memory
@@ -69,6 +71,11 @@ export interface TerminalPrefs {
   instantInput: boolean;
   /** Draw inline images (SIXEL and iTerm's protocol), as timg, chafa or a plotting tool emit them. */
   images: boolean;
+  /**
+   * Let programs on the device put text into this computer's clipboard (OSC 52),
+   * as tmux and vim over SSH do. Off by default; the device can never read the clipboard.
+   */
+  osc52Write: boolean;
 }
 
 const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
@@ -82,6 +89,7 @@ const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
   optionAsAlt: true,
   instantInput: true,
   images: true,
+  osc52Write: false,
 };
 
 function loadTerminalPrefs(storageKey: string): TerminalPrefs {
@@ -99,6 +107,7 @@ function loadTerminalPrefs(storageKey: string): TerminalPrefs {
       optionAsAlt: v.optionAsAlt !== false,
       instantInput: v.instantInput !== false,
       images: v.images !== false,
+      osc52Write: v.osc52Write === true,
     };
   } catch {
     return { ...DEFAULT_TERMINAL_PREFS };
@@ -222,8 +231,10 @@ interface Tab {
 }
 
 /** Remote shells only (RustDesk "Terminal"), full screen, in tabs over one connection. */
-export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => void }) {
+export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => void; onRequestApproval?: () => void }) {
   const { t } = useI18n();
+  // fixed for the life of this component (the host keys it by mode)
+  const [approval] = useState(props.requestApproval === true);
   const storageKey = props.storageKey ?? DEFAULT_STORAGE_KEY;
   const sessRef = useRef<TerminalSession | null>(null);
   const libRef = useRef<XtermLib | null>(null);
@@ -368,6 +379,9 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     term.loadAddon(new lib.Unicode11Addon());
     term.unicode.activeVersion = "11";
     term.loadAddon(fit);
+    // OSC 52 clipboard writes, only while the option is on; queries are always refused.
+    // Not from a reattached shell's replayed output: that is old, not a request made now.
+    term.parser.registerOscHandler(52, osc52Handler(() => prefsRef.current.osc52Write && !pane.replaying));
     // SIXEL and iTerm inline images (timg, chafa, plotting tools). Before open(),
     // and it draws under the WebGL renderer as well as the DOM one.
     if (lib.ImageAddon) {
@@ -464,6 +478,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   useEffect(() => {
     let disposed = false;
     let opened = false;
+    let waitingNow = false;
     let ro: ResizeObserver | null = null;
     void (async () => {
       const [{ Terminal }, { FitAddon }, { SearchAddon }, { WebLinksAddon }, { Unicode11Addon }, webgl, image] = await Promise.all([
@@ -537,7 +552,9 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       const s = new TerminalSession({
         peerId: props.peerId,
         server: props.server,
-        rememberedHash: loadRememberedHash(props.server.key, props.peerId, storageKey) ?? props.credentials?.rememberedHash,
+        // request approval sends no password from any source
+        rememberedHash: approval ? undefined : (loadRememberedHash(props.server.key, props.peerId, storageKey) ?? props.credentials?.rememberedHash),
+        requestApproval: approval || undefined,
         myName: props.myName,
         myId: props.myId || undefined,
         cols: first.term.cols,
@@ -548,7 +565,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         keepAliveMs: prefsRef.current.keepAlive ? KEEPALIVE_MS : 0,
       });
       sessRef.current = s;
-      let hostPasswordTried = !props.credentials?.password;
+      let hostPasswordTried = approval || !props.credentials?.password;
       s.on("password", ({ wrong }) => {
         if (!wrong && !hostPasswordTried) {
           hostPasswordTried = true;
@@ -562,7 +579,10 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         setWrong(wrong);
         setConn("twoFactor");
       });
-      s.on("waitingForApproval", () => setConn("waiting"));
+      s.on("waitingForApproval", () => {
+        waitingNow = true;
+        setConn("waiting");
+      });
       s.on("connected", ({ rememberedHash }) => {
         if (!rememberedHash || !rememberRef.current) return;
         saveRememberedHash(props.server.key, props.peerId, rememberedHash, storageKey);
@@ -648,7 +668,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       first.term.focus();
     })().catch((e: Error & { code?: string }) => {
       if (disposed) return;
-      setError(e.code && KNOWN_ERRORS.includes(e.code) ? t(`errors.${e.code}`, { detail: e.message }) : e.message);
+      const code = approvalErrorCode(e.code, approval, waitingNow);
+      setError(code && KNOWN_ERRORS.includes(code) ? t(`errors.${code}`, { detail: e.message }) : e.message);
       setConn("error");
     });
     return () => {
@@ -1315,6 +1336,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
                   passwordDesc={t("terminal.passwordDesc")}
                   remember={remember}
                   onRemember={setRemember}
+                  approval={approval}
+                  onRequestApproval={props.onRequestApproval}
                   connectingText={t("terminal.connecting")}
                   onSubmit={() => {
                     const s = sessRef.current;
@@ -1503,6 +1526,13 @@ function TerminalSettings({
             <span>
               {t("terminal.images")}
               <span className="block text-xs text-muted-foreground">{t("terminal.imagesHint")}</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox checked={draft.osc52Write} onCheckedChange={(v) => setDraft({ ...draft, osc52Write: v === true })} className="mt-0.5" />
+            <span>
+              {t("terminal.osc52")}
+              <span className="block text-xs text-muted-foreground">{t("terminal.osc52Hint")}</span>
             </span>
           </label>
           <label className="flex items-start gap-2 text-sm">

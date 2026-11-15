@@ -37,8 +37,12 @@ export interface FilePeerSummary {
 export interface FileTransferOptions {
   server: ServerConfig;
   peerId: string;
-  /** Stored SHA256(password || salt) from an earlier "remember password". */
+  /** Stored SHA256(password || salt) from an earlier "remember password". Ignored with "requestApproval". */
   rememberedHash?: Uint8Array;
+  /** "Request approval": send no password, wait for the remote user to accept (see SessionOptions). Default: off. */
+  requestApproval?: boolean;
+  /** Request approval: give up after this many ms without an answer (default 2 minutes, 0 = never). */
+  approvalTimeoutMs?: number;
   /** Shown to the remote user in the connection request. */
   myName?: string;
   /** Our id as shown on the remote side; defaults to a web-specific marker. */

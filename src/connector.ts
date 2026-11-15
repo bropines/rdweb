@@ -29,6 +29,10 @@ import type { CloseInfo, ServerConfig } from "./types.js";
 /** Announced to peers; they enable features by version. */
 export const CLIENT_VERSION = "1.4.3";
 const WEB_ID_PREFIX = "web";
+/** How long "request approval" waits for the remote user to decide. */
+export const APPROVAL_TIMEOUT_MS = 120_000;
+/** Probe interval while waiting for approval (hbbr drops a silent relay link after 30 s). */
+const APPROVAL_KEEPALIVE_MS = 10_000;
 
 export class SessionError extends Error {
   constructor(
@@ -126,6 +130,18 @@ export interface ConnectorConfig {
    * but an idle terminal does. 0 or unset: no probes.
    */
   keepAliveMs?: number;
+  /**
+   * "Request approval" (RustDesk 1.5.3): send NO password from any source, not
+   * `rememberedHash`, not `login()`, and wait for the remote user to accept.
+   * A device that only allows password logins refuses with code
+   * "approval-unavailable". Default: off, the usual password dialogue.
+   */
+  requestApproval?: boolean;
+  /**
+   * Request approval: give up after this many ms without an answer (default
+   * 2 minutes, 0 = never) with code "approval-timeout".
+   */
+  approvalTimeoutMs?: number;
   /** LoginRequest fields specific to the session kind (options, file transfer, ...). */
   loginExtras: () => Omit<LoginInit, "username" | "password" | "myId" | "myName" | "myPlatform" | "version" | "sessionId">;
   /** Error code for a login refusal the dialogue cannot handle (default "login"). */
@@ -161,12 +177,17 @@ export class PeerConnector {
   private closed = false;
   private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
   private lastActivity = Date.now();
+  private readonly approval: boolean;
+  private approvalTimer: ReturnType<typeof setTimeout> | null = null;
+  private approvalWaiting = false;
+  private approvalKeepAlive = false;
 
   constructor(
     private readonly cfg: ConnectorConfig,
     private readonly ev: ConnectorEvents,
   ) {
     this.peerId = cfg.peerId;
+    this.approval = cfg.requestApproval === true;
   }
 
   get clientVersion(): string {
@@ -257,6 +278,8 @@ export class PeerConnector {
 
   /** Answers a `password` event. */
   async login(password: string): Promise<void> {
+    // request approval sends no password, whoever supplies one
+    if (this.approval) return;
     if (!this.salt) throw new SessionError("not waiting for a password", "state");
     this.hash = await rememberedPasswordHash(password, this.salt);
     await this.sendLogin(this.hash);
@@ -278,6 +301,7 @@ export class PeerConnector {
 
   /** Fails a pending connect() with `err` (the link itself stays as is). */
   rejectLogin(err: Error): void {
+    this.clearApprovalTimer();
     const reject = this.loginReject;
     this.loginResolve = this.loginReject = null;
     reject?.(err);
@@ -289,6 +313,7 @@ export class PeerConnector {
     this.closed = true;
     if (this.keepAliveTimer) clearInterval(this.keepAliveTimer);
     this.keepAliveTimer = null;
+    this.clearApprovalTimer();
     this.relay?.close(reason);
     this.relay = null;
     this.cipher?.destroy();
@@ -301,6 +326,13 @@ export class PeerConnector {
 
   private onTransportClosed(reason: string): void {
     if (this.closed) return;
+    if (this.approvalWaiting) {
+      // Not retryable: a retry would ask the remote user again, and again.
+      const err = new SessionError(reason, "approval-ended");
+      this.rejectLogin(err);
+      this.ev.failed({ reason: err.message, remote: true, retryable: false });
+      return;
+    }
     const err = new SessionError(`connection lost: ${reason}`, "network");
     this.rejectLogin(err);
     this.ev.failed({ reason: err.message, remote: true, retryable: true });
@@ -311,8 +343,7 @@ export class PeerConnector {
    * peer echoes back. Both directions reset a relay's idle timer, so the probe
    * works even with a peer that ignores it.
    */
-  private startKeepAlive(): void {
-    const everyMs = this.cfg.keepAliveMs ?? 0;
+  private startKeepAlive(everyMs = this.cfg.keepAliveMs ?? 0): void {
     if (everyMs <= 0 || this.keepAliveTimer) return;
     const tick = Math.max(1_000, Math.round(everyMs / 2));
     this.keepAliveTimer = setInterval(() => {
@@ -362,6 +393,14 @@ export class PeerConnector {
   }
 
   private async onHash(): Promise<void> {
+    if (this.approval) {
+      // No password from any source: an empty login asks the remote user to accept.
+      this.hash = null;
+      this.beginApprovalWait();
+      await this.sendLogin(null);
+      this.ev.waitingForApproval();
+      return;
+    }
     if (this.cfg.rememberedHash?.length && !this.triedRemembered) {
       this.triedRemembered = true;
       this.hash = new Uint8Array(this.cfg.rememberedHash);
@@ -375,7 +414,7 @@ export class PeerConnector {
   }
 
   private async sendLogin(saltedHash: Uint8Array | null): Promise<void> {
-    const proof = saltedHash ? await loginProof(saltedHash, this.challenge) : new Uint8Array(0);
+    const proof = saltedHash && !this.approval ? await loginProof(saltedHash, this.challenge) : new Uint8Array(0);
     this.send({
       union: {
         case: "loginRequest",
@@ -397,16 +436,25 @@ export class PeerConnector {
     if ((globalThis as { RDWEB_DEBUG?: boolean }).RDWEB_DEBUG) console.debug("rdweb: login error", JSON.stringify(err));
     switch (err) {
       case "Empty Password":
-        this.ev.password(false);
-        return;
       case "Wrong Password":
-        this.hash = null;
-        this.ev.password(true);
+        if (this.approval) {
+          // the device only lets a password in; asking for one would not help, none is sent
+          this.failApproval(new SessionError(err, "approval-unavailable"));
+          return;
+        }
+        if (err === "Empty Password") {
+          this.ev.password(false);
+        } else {
+          this.hash = null;
+          this.ev.password(true);
+        }
         return;
       case "2FA Required":
+        this.clearApprovalTimer();
         this.ev.twoFactor(false);
         return;
       case "Wrong 2FA Code":
+        this.clearApprovalTimer();
         this.ev.twoFactor(true);
         return;
       case "No Password Access":
@@ -419,7 +467,42 @@ export class PeerConnector {
     }
   }
 
+  /** Starts the wait for the remote user's decision: a timeout and, on an idle link, probes. */
+  private beginApprovalWait(): void {
+    this.approvalWaiting = true;
+    if (!this.keepAliveTimer && !(this.cfg.keepAliveMs && this.cfg.keepAliveMs > 0)) {
+      this.approvalKeepAlive = true;
+      this.startKeepAlive(APPROVAL_KEEPALIVE_MS);
+    }
+    const limit = this.cfg.approvalTimeoutMs ?? APPROVAL_TIMEOUT_MS;
+    if (limit <= 0 || this.approvalTimer || this.closed) return;
+    this.approvalTimer = setTimeout(() => {
+      this.approvalTimer = null;
+      this.send({ union: { case: "misc", value: { union: { case: "closeReason", value: "timeout" } } } });
+      this.failApproval(new SessionError("nobody accepted the connection in time", "approval-timeout"), false);
+    }, limit);
+  }
+
+  private clearApprovalTimer(): void {
+    if (this.approvalTimer) clearTimeout(this.approvalTimer);
+    this.approvalTimer = null;
+  }
+
+  private failApproval(err: SessionError, remote = true): void {
+    this.rejectLogin(err);
+    this.ev.failed({ reason: err.message, remote, retryable: false });
+    this.close(err.message);
+  }
+
   private onLoggedIn(pi: PeerInfo): void {
+    this.clearApprovalTimer();
+    this.approvalWaiting = false;
+    if (this.approvalKeepAlive) {
+      // the probes were only for the wait; the session keeps its own keep-alive setting
+      this.approvalKeepAlive = false;
+      if (this.keepAliveTimer) clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = null;
+    }
     this.startKeepAlive();
     this.ev.loggedIn(pi);
     const resolve = this.loginResolve;

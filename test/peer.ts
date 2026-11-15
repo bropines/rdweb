@@ -34,6 +34,12 @@ export interface PeerConfig {
   loginError?: string;
   /** Messages to send right after a successful login. */
   afterLogin?: (peer: FakePeer) => void;
+  /**
+   * A login with no password arrived: the remote user's decision to make. The
+   * handle accepts it (peerInfo), answers with any message or drops the link.
+   * Without it, such a login is simply left waiting.
+   */
+  onEmptyLogin?: (decide: { accept(): void; send(init: PeerInit): void; drop(): void }) => void;
   /** Every message after login. */
   onMessage?: (m: Message, peer: FakePeer) => void;
   /**
@@ -239,7 +245,9 @@ export class FakeSocket {
     net.loginRequests.push(lr);
     const expected = sha256(sha256(PASSWORD, SALT), CHALLENGE);
     if (lr.password.length === 0) {
-      return; // wait for the password
+      // wait for the password, or for the remote user
+      net.config.onEmptyLogin?.({ accept: () => this.acceptLogin(), send: (init) => this.peerSend(init), drop: () => this.drop() });
+      return;
     }
     if (Buffer.compare(Buffer.from(lr.password), Buffer.from(expected)) !== 0) {
       this.peerSend({ union: { case: "loginResponse", value: { union: { case: "error", value: "Wrong Password" } } } });
@@ -249,6 +257,10 @@ export class FakeSocket {
       this.peerSend({ union: { case: "loginResponse", value: { union: { case: "error", value: net.config.loginError } } } });
       return;
     }
+    this.acceptLogin();
+  }
+
+  private acceptLogin(): void {
     this.loggedIn = true;
     const peerInfo = net.config.peerInfo ?? { username: "alice", hostname: "box", platform: "Linux", version: "1.4.3" };
     this.peerSend({ union: { case: "loginResponse", value: { union: { case: "peerInfo", value: peerInfo } } } });

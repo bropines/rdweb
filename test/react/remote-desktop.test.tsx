@@ -58,7 +58,7 @@ const fakes = vi.hoisted(() => {
     connect = vi.fn(() => new Promise<void>(() => {}));
     login = vi.fn(async (_pw: string) => {});
     close = vi.fn();
-    constructor() {
+    constructor(public opts: Record<string, unknown> = {}) {
       FakeFileTransfer.all.push(this);
     }
     on(ev: string, fn: Handler) {
@@ -164,6 +164,71 @@ describe("<RemoteDesktop>", () => {
     expect(screen.getByRole("dialog", { name: "Password required" })).toBeTruthy();
     expect(screen.getByText("Wrong password, try again.")).toBeTruthy();
     expect(onForget).toHaveBeenCalledTimes(1);
+  });
+
+  describe("request approval", () => {
+    const stored = () => localStorage.setItem(`rdweb.pw.${server.key.slice(0, 16)}.42`, JSON.stringify("AQID"));
+
+    it("is off by default", () => {
+      render(<RemoteDesktop peerId="42" server={server} onLeave={vi.fn()} />);
+      expect(session().opts.requestApproval).toBeUndefined();
+    });
+
+    it("sends no password from any source and shows the wait, not a password dialog", () => {
+      stored();
+      const onLeave = vi.fn();
+      render(
+        <RemoteDesktop
+          peerId="42"
+          server={server}
+          onLeave={onLeave}
+          requestApproval
+          credentials={{ rememberedHash: new Uint8Array([1, 2, 3]), password: "from-book", fromPersonalBook: true }}
+        />,
+      );
+      expect(session().opts.requestApproval).toBe(true);
+      expect(session().opts.rememberedHash).toBeUndefined();
+      act(() => session().emit("waitingForApproval"));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.getAllByText("Waiting for the remote user to accept the connection…").length).toBeGreaterThan(0);
+      // the supplied password is not tried even if the session asked for one
+      act(() => session().emit("password", { wrong: false }));
+      expect(session().login).not.toHaveBeenCalledWith("from-book");
+      // the saved hash is still there afterwards
+      expect(loadRememberedHash(server.key, "42")).toEqual(new Uint8Array([1, 2, 3]));
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(session().close).toHaveBeenCalledWith("Cancelled");
+    });
+
+    it("is offered in the password dialog, and a reconnect keeps it", () => {
+      stored();
+      render(<RemoteDesktop peerId="42" server={server} onLeave={vi.fn()} />);
+      expect(session().opts.requestApproval).toBeUndefined();
+      expect(session().opts.rememberedHash).toEqual(new Uint8Array([1, 2, 3]));
+      act(() => session().emit("password", { wrong: true }));
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Password required" })).getByRole("button", { name: "Request approval" }));
+      // a new session in the new mode; the old one is gone
+      expect(fakes.FakeSession.all).toHaveLength(2);
+      expect(session().opts.requestApproval).toBe(true);
+      expect(session().opts.rememberedHash).toBeUndefined();
+      act(() => session().emit("waitingForApproval"));
+      act(() => session().emit("close", { reason: "x", remote: true, retryable: false }));
+      fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+      expect(fakes.FakeSession.all).toHaveLength(3);
+      expect(session().opts.requestApproval).toBe(true);
+      expect(session().opts.rememberedHash).toBeUndefined();
+    });
+
+    it("files mode: no hash, and the waiting prompt has no password field", async () => {
+      stored();
+      render(<RemoteDesktop peerId="42" server={server} onLeave={vi.fn()} mode="files" requestApproval />);
+      const ft = fakes.FakeFileTransfer.all.at(-1)!;
+      expect(ft.opts.requestApproval).toBe(true);
+      expect(ft.opts.rememberedHash).toBeUndefined();
+      await act(async () => ft.emit("waitingForApproval"));
+      expect(screen.getByText("Waiting for the remote user to accept the connection…")).toBeTruthy();
+      expect(screen.queryByLabelText("Remote device password")).toBeNull();
+    });
   });
 
   it("prefers the hash remembered in this browser and follows lang/messages", () => {

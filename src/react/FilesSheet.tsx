@@ -55,6 +55,7 @@ import { DEFAULT_STORAGE_KEY, saveRememberedHash } from "./prefs.js";
 import { Button } from "./ui/button.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog.js";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu.js";
+import { APPROVAL_ERRORS, approvalErrorCode } from "./approval.js";
 import { Input } from "./ui/input.js";
 import { Checkbox } from "./ui/misc.js";
 import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "./ui/sheet.js";
@@ -67,6 +68,10 @@ export interface FilesSheetProps {
   server: ServerConfig;
   /** Salted password hash of the remote-desktop login, so the files connection signs in silently. */
   rememberedHash: Uint8Array | null;
+  /** "Request approval": send no password and wait for the remote user (see RemoteDesktopProps.requestApproval). */
+  requestApproval?: boolean;
+  /** Called by the "Request approval" button of the password prompt; default: this sheet reconnects in that mode itself. */
+  onRequestApproval?: () => void;
   myName?: string;
   myId?: string;
   /** Full-page file manager (no remote desktop) instead of a side sheet. */
@@ -174,6 +179,9 @@ export function FilesSheet(p: FilesSheetProps) {
   const ftRef = useRef<FileTransferSession | null>(null);
   const [conn, setConn] = useState<ConnState>("idle");
   const [attempt, setAttempt] = useState(0);
+  // "Request approval" chosen in the password prompt; it stays for every retry of this sheet
+  const [approvalChosen, setApprovalChosen] = useState(false);
+  const approval = p.requestApproval === true || approvalChosen;
   const [connError, setConnError] = useState("");
   const [pwWrong, setPwWrong] = useState(false);
   const [secret, setSecret] = useState("");
@@ -239,11 +247,13 @@ export function FilesSheet(p: FilesSheetProps) {
     const ft = new FileTransferSession({
       peerId: p.peerId,
       server: p.server,
-      rememberedHash: p.rememberedHash ?? undefined,
+      rememberedHash: approval ? undefined : (p.rememberedHash ?? undefined),
+      requestApproval: approval || undefined,
       myName: p.myName,
       myId: p.myId,
     });
     ftRef.current = ft;
+    let waitingNow = false;
     setConn("connecting");
     ft.on("password", ({ wrong }) => {
       setPwWrong(wrong);
@@ -253,7 +263,10 @@ export function FilesSheet(p: FilesSheetProps) {
       setPwWrong(wrong);
       setConn("twoFactor");
     });
-    ft.on("waitingForApproval", () => setConn("waiting"));
+    ft.on("waitingForApproval", () => {
+      waitingNow = true;
+      setConn("waiting");
+    });
     ft.on("connected", ({ home, rememberedHash }) => {
       setConn("ready");
       const peer = ft.peer;
@@ -274,11 +287,18 @@ export function FilesSheet(p: FilesSheetProps) {
       setConnError(reason);
       ftRef.current = null;
     });
-    ft.connect().catch((e: Error) => {
-      setConnError(e instanceof FileTransferError && e.code === "permission-denied" ? t("files.errors.permission-denied") : e.message);
+    ft.connect().catch((e: Error & { code?: string }) => {
+      const code = approvalErrorCode(e.code, approval, waitingNow);
+      setConnError(
+        e instanceof FileTransferError && e.code === "permission-denied"
+          ? t("files.errors.permission-denied")
+          : code && (APPROVAL_ERRORS as readonly string[]).includes(code)
+            ? t(`errors.${code}`, { detail: e.message })
+            : e.message,
+      );
       setConn("error");
     });
-  }, [p.open, p.peerId, p.server, p.rememberedHash, p.myName, p.myId, t, attempt]);
+  }, [p.open, p.peerId, p.server, p.rememberedHash, p.myName, p.myId, t, attempt, approval]);
 
   useEffect(
     () => () => {
@@ -658,6 +678,19 @@ export function FilesSheet(p: FilesSheetProps) {
                   setSecret={setSecret}
                   remember={remember}
                   onRemember={p.onRemembered ? setRemember : undefined}
+                  approval={approval}
+                  onRequestApproval={() => {
+                    if (p.onRequestApproval) {
+                      p.onRequestApproval();
+                      return;
+                    }
+                    ftRef.current?.close("closed");
+                    ftRef.current = null;
+                    setApprovalChosen(true);
+                    setConn("idle");
+                    setConnError("");
+                    setAttempt((a) => a + 1);
+                  }}
                   onSubmit={() => {
                     const ft = ftRef.current;
                     if (!ft || !secret) return;
@@ -888,6 +921,8 @@ export function ConnectPane({
   connectingText,
   remember,
   onRemember,
+  approval,
+  onRequestApproval,
 }: {
   state: ConnState;
   error: string;
@@ -901,8 +936,20 @@ export function ConnectPane({
   /** "Remember password" (shown with onRemember): the login's salted hash is kept in this browser. */
   remember?: boolean;
   onRemember?: (on: boolean) => void;
+  /** Connected in "request approval" mode: while waiting there is no password to type. */
+  approval?: boolean;
+  /** Offered with the password prompt: connect again without a password and ask the remote user to accept. */
+  onRequestApproval?: () => void;
 }) {
   const { t } = useI18n();
+  if (approval && state === "waiting") {
+    return (
+      <div className="flex items-center justify-center gap-2 p-10 text-center text-sm text-muted-foreground">
+        <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" />
+        {t("approvalWaiting")}
+      </div>
+    );
+  }
   if (state === "password" || state === "twoFactor" || state === "waiting") {
     return (
       <form
@@ -938,6 +985,14 @@ export function ConnectPane({
         <Button type="submit" className="w-full" disabled={!secret}>
           {state === "twoFactor" ? t("verify") : t("connect")}
         </Button>
+        {state === "password" && onRequestApproval && !approval && (
+          <div className="space-y-1.5 rounded-md border p-3">
+            <Button type="button" variant="secondary" size="sm" onClick={onRequestApproval}>
+              {t("requestApproval")}
+            </Button>
+            <p className="text-xs text-muted-foreground">{t("requestApprovalHint")}</p>
+          </div>
+        )}
       </form>
     );
   }

@@ -64,6 +64,31 @@ for the relay. Anything that does not verify is refused: there is no fallback
 to an unauthenticated connection. The details are in
 [security.md](security.md).
 
+### Request approval
+
+`requestApproval: true` (on `Session`, `FileTransferSession` and `TerminalSession`) is
+RustDesk 1.5.3's "Request approval": the login carries **no password from any
+source** — `rememberedHash` is not used, `login()` does nothing, so a password
+passed together with it is ignored — and the connection waits for the remote user
+to click Accept. The default (`false`) is the usual login, unchanged.
+
+- `waitingForApproval` is emitted at once; `password` is not, because there is
+  nothing to type. `connected` carries `rememberedHash: null`: nothing was proven,
+  so there is nothing to store (a hash saved earlier is untouched).
+- Accepted: the session connects as usual. Declined: the device ends the
+  connection; a close reason makes `connect()` reject with code `remote-closed`
+  (the React UI shows it as declined), a bare drop is `approval-ended` below.
+- A device that lets only a password in answers "Empty Password": `connect()`
+  rejects with code `approval-unavailable` (a password is never sent as a fallback).
+- Nobody answers within `approvalTimeoutMs` (default 2 minutes): code `approval-timeout`,
+  and the device is told the request is withdrawn. A link that drops while waiting
+  fails with `approval-ended`. None of these are `retryable`, so a caller that retries
+  by itself does not ask the remote user again and again.
+- While waiting, the link is probed with a `testDelay` every 10 s, since a relay
+  drops a connection that carries nothing after about 30 s.
+
+To keep the mode on a reconnect, create the new session with the same option.
+
 ## ServerConfig
 
 Passed as `server` to every session type and to `checkServer`.
@@ -144,6 +169,8 @@ await session.connect();
 | `server` | `ServerConfig` | required |
 | `peerId` | `string` | required; device id, whitespace is removed |
 | `rememberedHash` | `Uint8Array` | a stored `SHA256(password ‖ salt)` from an earlier login ("remember password"), tried before asking for a password |
+| `requestApproval` | `boolean` | "Request approval" (RustDesk 1.5.3): send **no** password, not `rememberedHash`, not `login()`, and wait for the remote user to accept; default `false`. See [Request approval](#request-approval) |
+| `approvalTimeoutMs` | `number` | request approval: give up after this long without an answer (default 120000, `0` = never) |
 | `myName` | `string` | shown to the remote user in the connection request (default `"Web client"`) |
 | `myId` | `string` | our id as shown on the remote side (default `"web"`) |
 | `settings` | `Partial<SessionSettings>` | initial settings, see below |
@@ -348,7 +375,7 @@ for (const e of dir.entries) console.log(e.type, e.name, e.size, new Date(e.modi
 
 | option | default | description |
 |---|---|---|
-| `server`, `peerId`, `rememberedHash`, `myName`, `myId`, `clientVersion` | | as for `Session` |
+| `server`, `peerId`, `rememberedHash`, `requestApproval`, `approvalTimeoutMs`, `myName`, `myId`, `clientVersion` | | as for `Session` |
 | `initialDir` | `""` | folder listed first (empty: the remote user's home) |
 | `showHidden` | `false` | include hidden entries in the first listing |
 | `requestTimeoutMs` | `30000` | how long to wait for a listing or a file operation |
@@ -489,7 +516,7 @@ term.closeTerminal(1);
 
 | option | default | description |
 |---|---|---|
-| `server`, `peerId`, `rememberedHash`, `myName`, `myId`, `clientVersion` | | as for `Session` |
+| `server`, `peerId`, `rememberedHash`, `requestApproval`, `approvalTimeoutMs`, `myName`, `myId`, `clientVersion` | | as for `Session` |
 | `cols`, `rows` | `80`, `24` | size of terminal 0 in character cells |
 | `persistent` | `false` | ask the device to keep the shells running when the connection drops |
 | `serviceId` | | the `serviceId` of an earlier session, to reattach to its shells |

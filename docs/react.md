@@ -80,6 +80,7 @@ shows them, or render rdweb's `Toaster` if the host has none.
 | `lang` | `"en" \| "ru"` | all | UI language, default `"en"` |
 | `messages` | `DeepPartial<Messages>` | all | override single strings, e.g. `{ toolbar: { back: "Back to the panel" } }` |
 | `credentials` | `RemoteDesktopCredentials \| null` | all | saved logins the host found, see [Saved logins](#saved-logins) |
+| `requestApproval` | `boolean` | all | "Request approval": send no password from any source and wait for the remote user to accept; default off. See [Request approval](#request-approval) |
 | `myName` | `string` | all | shown to the remote user in the connection request |
 | `myId` | `string` | all | our id as announced to the device |
 | `storageKey` | `string` | all | prefix of what is kept in this browser, default `"rdweb"`; see [What is stored](#what-is-stored-in-the-browser) |
@@ -118,6 +119,29 @@ the password) is stored in this browser and passed to `onRemembered`, so a
 host with accounts can keep it server side. With `fromPersonalBook`, a hash
 the device rejects calls `onForget`, and the toolbar offers "Forget saved
 password" for it.
+
+## Request approval
+
+`requestApproval` is RustDesk 1.5.3's mode for connecting without a password:
+the login carries **no password from any source** — not the hash remembered in
+this browser, not `credentials.rememberedHash` or `credentials.password` (ignored
+when both are given) — and the remote user is asked to accept. It is **off by
+default**; then everything works as before, except that the password prompt gets
+a "Request approval" button. The button reconnects in this mode.
+
+- While waiting, the desktop shows "Waiting for the remote user to accept the
+  connection…" with a Cancel button; terminal and files show the same text in
+  place of the password field. There is no password dialog in this mode.
+- Declined, timed out after two minutes, a device that only allows passwords
+  ("The device does not accept connection requests without a password"), or a
+  link that dropped while waiting: an error with Reconnect, which asks again in
+  the same mode, never with a saved password. Nothing retries by itself.
+- A saved password or hash is left alone and "Remember password" does nothing:
+  nothing was proven, so there is no hash to store.
+- The files sheet and later connections opened from a session in this mode
+  request approval too.
+- The mode lives in the component. A host that handles `onReconnect` by
+  remounting `<RemoteDesktop>` itself has to pass `requestApproval` again.
 
 ## Desktop mode
 
@@ -366,6 +390,20 @@ those tools ask for to scale an image to the cells. Images are capped at 32 MB
 of storage and 8 MB per image, after which the oldest ones become placeholders.
 Turning the setting on applies to the next connection, since the decoder loads
 with the session; reconnect a terminal that is already open.
+
+"Let programs on the device copy to my clipboard" is **off by default**
+(`osc52Write` in the terminal settings stored under `<storageKey>.terminal`).
+When it is on, `ESC ] 52 ; c ; <base64> BEL` (or ST), which tmux and vim over SSH
+emit, puts the decoded text on this computer's clipboard. It follows RustDesk's
+desktop terminal (1.5.0): the selection must be empty or name `c`, the base64
+and the UTF-8 must be valid, and text over 16 MiB is ignored (xterm.js itself
+drops an OSC payload over 10 MB before that); an empty payload is ignored rather than
+clearing the clipboard. The query form (`?`), which would let the device read
+the clipboard, is ignored always, with the option on or off. A browser that has
+no `navigator.clipboard`, or refuses the write (it wants the page focused and
+a recent user gesture), is dropped quietly. The option applies at once, and
+output replayed from a reattached shell never triggers a write. Turn it on only
+for devices you trust: anything running in the shell can replace your clipboard.
 
 **Not from a Windows device.** A shell there runs under a pseudoconsole, which
 RustDesk opens without `PSEUDOCONSOLE_PASSTHROUGH_MODE`: it parses the output
