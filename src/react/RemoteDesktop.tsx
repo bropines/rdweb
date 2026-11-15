@@ -75,6 +75,7 @@ import { SettingsSheet } from "./SettingsSheet.js";
 import { DEFAULT_PINNED_DESKTOP, DEFAULT_PINNED_TOUCH, Toolbar, type ToolbarAction } from "./Toolbar.js";
 import { useNoPullToRefresh, useVisualViewport } from "./viewport.js";
 import { Button } from "./ui/button.js";
+import { APPROVAL_ERRORS, approvalErrorCode } from "./approval.js";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog.js";
 import { Input } from "./ui/input.js";
 import { Checkbox, Textarea } from "./ui/misc.js";
@@ -108,6 +109,16 @@ export interface RemoteDesktopProps {
    * then `credentials.password`, then the password dialog.
    */
   credentials?: RemoteDesktopCredentials | null;
+  /**
+   * "Request approval" (RustDesk 1.5.3): connect sending NO password, from any
+   * source (not the one remembered in this browser, not "credentials"), and
+   * wait for the remote user to accept. A password passed with it is ignored.
+   * A reconnect keeps requesting approval. Default: off, the usual order of
+   * saved logins and the password dialog, which offers "Request approval" as a
+   * button. A host that remounts the component itself on reconnect (onReconnect)
+   * must keep passing this to stay in the mode.
+   */
+  requestApproval?: boolean;
   /** Shown to the remote user in the connection request. */
   myName?: string;
   /** Our id as announced to the device. */
@@ -156,16 +167,25 @@ export interface RemoteDesktopProps {
  */
 export function RemoteDesktop(props: RemoteDesktopProps) {
   const [attempt, setAttempt] = useState(0);
+  // "Request approval" picked in the password dialog; it stays for every reconnect of this component
+  const [chosen, setChosen] = useState(false);
+  const approval = props.requestApproval === true || chosen;
   const { onReconnect } = props;
   const reconnect = useCallback(() => (onReconnect ? onReconnect() : setAttempt((a) => a + 1)), [onReconnect]);
+  const requestApproval = useCallback(() => {
+    setChosen(true);
+    setAttempt((a) => a + 1);
+  }, []);
+  const shared = { ...props, requestApproval: approval, onRequestApproval: requestApproval };
+  const key = `${props.server.rendezvousUrl}|${props.server.key}|${props.peerId}#${attempt}${approval ? "a" : ""}`;
   return (
     <I18nProvider lang={props.lang} messages={props.messages}>
       {props.mode === "files" ? (
-        <RemoteFiles key={`${props.server.rendezvousUrl}|${props.server.key}|${props.peerId}`} {...props} />
+        <RemoteFiles key={key} {...shared} />
       ) : props.mode === "terminal" ? (
-        <RemoteTerminal key={`${props.server.rendezvousUrl}|${props.server.key}|${props.peerId}#${attempt}`} {...props} onReconnect={reconnect} />
+        <RemoteTerminal key={key} {...shared} onReconnect={reconnect} />
       ) : isWebCodecsAvailable() ? (
-        <RemoteSession key={`${props.server.rendezvousUrl}|${props.server.key}|${props.peerId}#${attempt}`} {...props} onReconnect={reconnect} />
+        <RemoteSession key={key} {...shared} onReconnect={reconnect} />
       ) : (
         <Unsupported onLeave={props.onLeave} className={props.className} />
       )}
@@ -174,9 +194,11 @@ export function RemoteDesktop(props: RemoteDesktopProps) {
 }
 
 /** File manager only: a file transfer connection, no screen. */
-function RemoteFiles(props: RemoteDesktopProps) {
+function RemoteFiles(props: RemoteDesktopProps & { onRequestApproval?: () => void }) {
   const storageKey = props.storageKey ?? DEFAULT_STORAGE_KEY;
-  const [hash] = useState(() => loadRememberedHash(props.server.key, props.peerId, storageKey) ?? props.credentials?.rememberedHash ?? null);
+  const [hash] = useState(() =>
+    props.requestApproval ? null : (loadRememberedHash(props.server.key, props.peerId, storageKey) ?? props.credentials?.rememberedHash ?? null),
+  );
   return (
     <div className={cn(SCOPE, "fixed inset-0 bg-background text-foreground", props.className)}>
       <FilesSheet
@@ -186,6 +208,8 @@ function RemoteFiles(props: RemoteDesktopProps) {
         peerId={props.peerId}
         server={props.server}
         rememberedHash={hash}
+        requestApproval={props.requestApproval}
+        onRequestApproval={props.onRequestApproval}
         myName={props.myName}
         myId={props.myId || undefined}
         onBack={props.onLeave}
@@ -245,10 +269,12 @@ function settle(result: () => void | Promise<unknown>, onOk: () => void, onError
 
 type DialogName = "none" | "password" | "twoFactor" | "clipboard" | "type" | "chat" | "restart" | "display";
 
-const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused"];
+const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused", ...APPROVAL_ERRORS];
 
-function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) {
+function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void; onRequestApproval?: () => void }) {
   const { peerId, credentials, onLeave, onReconnect } = props;
+  // fixed for the life of this component (the host keys it by mode)
+  const [approval] = useState(props.requestApproval === true);
   const storageKey = props.storageKey ?? DEFAULT_STORAGE_KEY;
   // fixed for the life of this component (it is keyed by peer and server)
   const [server] = useState(props.server);
@@ -307,15 +333,18 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
     const p = withDevicePrefs(loadPrefs(storageKey), loadDevicePrefs(server.key, peerId, storageKey));
     // Saved logins, in the desktop client's order: this browser's remembered
     // hash, the host's hash (personal address book), then the host's password.
-    const localHash = loadRememberedHash(server.key, peerId, storageKey);
-    const hostHash = localHash ? undefined : credentials?.rememberedHash;
-    let hostPasswordTried = !credentials?.password;
+    // Request approval sends no password from any source: none of these is looked at.
+    const localHash = approval ? undefined : loadRememberedHash(server.key, peerId, storageKey);
+    const hostHash = localHash || approval ? undefined : credentials?.rememberedHash;
+    let hostPasswordTried = approval || !credentials?.password;
+    let waitingNow = false;
     let session: Session;
     try {
       session = new Session({
         peerId,
         server,
         rememberedHash: localHash ?? hostHash,
+        requestApproval: approval || undefined,
         myName: props.myName,
         myId: props.myId || undefined,
         settings: p.settings,
@@ -363,8 +392,10 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
         setDialog("password");
       }),
       session.on("waitingForApproval", () => {
+        waitingNow = true;
         setWaiting(true);
-        setDialog("password");
+        // in request-approval mode there is nothing to type: the overlay says we wait
+        if (!approval) setDialog("password");
       }),
       session.on("twoFactor", ({ wrong }) => {
         setTfaWrong(wrong);
@@ -442,7 +473,8 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
     let disposed = false;
     session.connect().catch((e: Error & { code?: string }) => {
       if (disposed) return;
-      setError(e.code && KNOWN_ERRORS.includes(e.code) ? t(`errors.${e.code}`, { detail: e.message }) : e.message);
+      const code = approvalErrorCode(e.code, approval, waitingNow);
+      setError(code && KNOWN_ERRORS.includes(code) ? t(`errors.${code}`, { detail: e.message }) : e.message);
     });
     return () => {
       disposed = true;
@@ -539,7 +571,8 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
 
   // Our own disconnects are not worth a raw (English) reason.
   const closedText = closed ? (closed.remote ? closed.reason : t("state.closed")) : "";
-  const statusText = error ? error : closed ? closedText : t(`state.${state}`, { defaultValue: state });
+  const approvalWait = approval && waiting && busy;
+  const statusText = error ? error : closed ? closedText : approvalWait ? t("approvalWaiting") : t(`state.${state}`, { defaultValue: state });
 
   const title = peer?.hostname || peerId;
   const desktopLayout = layoutFor(peer?.os);
@@ -708,7 +741,19 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
         {busy && dialog === "none" && (
           <Overlay>
             <LoaderCircle className="h-6 w-6 animate-spin" />
-            <div className="text-sm text-white/80">{statusText}</div>
+            <div className="max-w-sm text-center text-sm text-white/80">{statusText}</div>
+            {approvalWait && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setDialog("none");
+                  sessionRef.current?.close(t("cancelled"));
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+            )}
           </Overlay>
         )}
         {(closed || error) && (
@@ -749,6 +794,7 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
         peerId={peerId}
         server={server}
         rememberedHash={loginHash}
+        requestApproval={approval}
         myName={props.myName}
         myId={props.myId || undefined}
         incoming={incoming}
@@ -792,6 +838,7 @@ function RemoteSession(props: RemoteDesktopProps & { onReconnect: () => void }) 
         waiting={waiting}
         rememberLabel={props.rememberLabel ?? t("rememberPassword")}
         rememberHint={props.rememberHint ?? t("rememberHint")}
+        onRequestApproval={props.onRequestApproval}
         onSubmit={(pw, remember) => {
           rememberRef.current = remember;
           setPwWrong(false);
@@ -914,6 +961,7 @@ function PasswordDialog({
   waiting,
   rememberLabel,
   rememberHint,
+  onRequestApproval,
   onSubmit,
   onCancel,
 }: {
@@ -922,6 +970,8 @@ function PasswordDialog({
   waiting: boolean;
   rememberLabel: string;
   rememberHint: string;
+  /** Reconnect in "request approval" mode (no password at all). */
+  onRequestApproval?: () => void;
   onSubmit: (pw: string, remember: boolean) => void;
   onCancel: () => void;
 }) {
@@ -966,6 +1016,14 @@ function PasswordDialog({
               {rememberHint && <span className="block text-xs text-muted-foreground">{rememberHint}</span>}
             </span>
           </label>
+          {onRequestApproval && (
+            <div className="space-y-1.5 rounded-md border p-3">
+              <Button type="button" variant="secondary" size="sm" onClick={onRequestApproval}>
+                {t("requestApproval")}
+              </Button>
+              <p className="text-xs text-muted-foreground">{t("requestApprovalHint")}</p>
+            </div>
+          )}
           <DialogFooter className="gap-2">
             <Button type="button" variant="outline" onClick={onCancel}>
               {t("common.cancel")}

@@ -19,8 +19,12 @@ const MAX_CHUNK = 4 << 20;
 export interface TerminalOptions {
   server: ServerConfig;
   peerId: string;
-  /** Stored SHA256(password || salt) from an earlier "remember password". */
+  /** Stored SHA256(password || salt) from an earlier "remember password". Ignored with "requestApproval". */
   rememberedHash?: Uint8Array;
+  /** "Request approval": send no password, wait for the remote user to accept (see SessionOptions). Default: off. */
+  requestApproval?: boolean;
+  /** Request approval: give up after this many ms without an answer (default 2 minutes, 0 = never). */
+  approvalTimeoutMs?: number;
   myName?: string;
   myId?: string;
   clientVersion?: string;
@@ -103,7 +107,9 @@ export class TerminalSession {
         peerId: this.peerId,
         server: opts.server,
         connType: ConnType.TERMINAL,
-        rememberedHash: opts.rememberedHash,
+        rememberedHash: opts.requestApproval ? undefined : opts.rememberedHash,
+        requestApproval: opts.requestApproval,
+        approvalTimeoutMs: opts.approvalTimeoutMs,
         myName: opts.myName,
         myId: opts.myId,
         clientVersion: opts.clientVersion,

@@ -117,6 +117,9 @@ relay), and ignores answers that offer a direct connection.
   `credentials.rememberedHash`), as RD Panel does in the user's address book.
 - A plain password passed by the host (`credentials.password`) is tried once
   and is not stored. Passwords never appear in URLs.
+- "Request approval" (`requestApproval`) sends no password from any source, so no
+  stored hash or host password can be used in that mode; it relies on the remote
+  user accepting the request.
 
 ## Other data in the browser
 

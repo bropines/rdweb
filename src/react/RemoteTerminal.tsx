@@ -17,12 +17,13 @@ import { Checkbox } from "./ui/misc.js";
 import { isModifier, modifyText, TERMINAL_LAYOUT, terminalKey, type TermMods } from "./keys.js";
 import { attachInstantInput } from "./instantInput.js";
 import { osc52Handler } from "./osc52.js";
+import { APPROVAL_ERRORS, approvalErrorCode } from "./approval.js";
 import { closeAction, localShellStore, type SavedShells } from "./shellStore.js";
 import { cellAt, extendFrom, selectBetween, wordAt, type Cell } from "./touchSelect.js";
 import { useNoPullToRefresh, useVisualViewport } from "./viewport.js";
 import { XTERM_CSS } from "./xtermCss.js";
 
-const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused", "os-login", "service-mismatch"];
+const KNOWN_ERRORS = ["offline", "not-found", "key-mismatch", "login-required", "timeout", "network", "unreachable", "handshake", "unverified-peer", "refused", "os-login", "service-mismatch", ...APPROVAL_ERRORS];
 
 /**
  * Administrator credentials for an elevated terminal, by service key. In memory
@@ -230,8 +231,10 @@ interface Tab {
 }
 
 /** Remote shells only (RustDesk "Terminal"), full screen, in tabs over one connection. */
-export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => void }) {
+export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => void; onRequestApproval?: () => void }) {
   const { t } = useI18n();
+  // fixed for the life of this component (the host keys it by mode)
+  const [approval] = useState(props.requestApproval === true);
   const storageKey = props.storageKey ?? DEFAULT_STORAGE_KEY;
   const sessRef = useRef<TerminalSession | null>(null);
   const libRef = useRef<XtermLib | null>(null);
@@ -475,6 +478,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
   useEffect(() => {
     let disposed = false;
     let opened = false;
+    let waitingNow = false;
     let ro: ResizeObserver | null = null;
     void (async () => {
       const [{ Terminal }, { FitAddon }, { SearchAddon }, { WebLinksAddon }, { Unicode11Addon }, webgl, image] = await Promise.all([
@@ -548,7 +552,9 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       const s = new TerminalSession({
         peerId: props.peerId,
         server: props.server,
-        rememberedHash: loadRememberedHash(props.server.key, props.peerId, storageKey) ?? props.credentials?.rememberedHash,
+        // request approval sends no password from any source
+        rememberedHash: approval ? undefined : (loadRememberedHash(props.server.key, props.peerId, storageKey) ?? props.credentials?.rememberedHash),
+        requestApproval: approval || undefined,
         myName: props.myName,
         myId: props.myId || undefined,
         cols: first.term.cols,
@@ -559,7 +565,7 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         keepAliveMs: prefsRef.current.keepAlive ? KEEPALIVE_MS : 0,
       });
       sessRef.current = s;
-      let hostPasswordTried = !props.credentials?.password;
+      let hostPasswordTried = approval || !props.credentials?.password;
       s.on("password", ({ wrong }) => {
         if (!wrong && !hostPasswordTried) {
           hostPasswordTried = true;
@@ -573,7 +579,10 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
         setWrong(wrong);
         setConn("twoFactor");
       });
-      s.on("waitingForApproval", () => setConn("waiting"));
+      s.on("waitingForApproval", () => {
+        waitingNow = true;
+        setConn("waiting");
+      });
       s.on("connected", ({ rememberedHash }) => {
         if (!rememberedHash || !rememberRef.current) return;
         saveRememberedHash(props.server.key, props.peerId, rememberedHash, storageKey);
@@ -659,7 +668,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
       first.term.focus();
     })().catch((e: Error & { code?: string }) => {
       if (disposed) return;
-      setError(e.code && KNOWN_ERRORS.includes(e.code) ? t(`errors.${e.code}`, { detail: e.message }) : e.message);
+      const code = approvalErrorCode(e.code, approval, waitingNow);
+      setError(code && KNOWN_ERRORS.includes(code) ? t(`errors.${code}`, { detail: e.message }) : e.message);
       setConn("error");
     });
     return () => {
@@ -1326,6 +1336,8 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
                   passwordDesc={t("terminal.passwordDesc")}
                   remember={remember}
                   onRemember={setRemember}
+                  approval={approval}
+                  onRequestApproval={props.onRequestApproval}
                   connectingText={t("terminal.connecting")}
                   onSubmit={() => {
                     const s = sessRef.current;

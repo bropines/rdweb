@@ -80,6 +80,7 @@ shows them, or render rdweb's `Toaster` if the host has none.
 | `lang` | `"en" \| "ru"` | all | UI language, default `"en"` |
 | `messages` | `DeepPartial<Messages>` | all | override single strings, e.g. `{ toolbar: { back: "Back to the panel" } }` |
 | `credentials` | `RemoteDesktopCredentials \| null` | all | saved logins the host found, see [Saved logins](#saved-logins) |
+| `requestApproval` | `boolean` | all | "Request approval": send no password from any source and wait for the remote user to accept; default off. See [Request approval](#request-approval) |
 | `myName` | `string` | all | shown to the remote user in the connection request |
 | `myId` | `string` | all | our id as announced to the device |
 | `storageKey` | `string` | all | prefix of what is kept in this browser, default `"rdweb"`; see [What is stored](#what-is-stored-in-the-browser) |
@@ -118,6 +119,29 @@ the password) is stored in this browser and passed to `onRemembered`, so a
 host with accounts can keep it server side. With `fromPersonalBook`, a hash
 the device rejects calls `onForget`, and the toolbar offers "Forget saved
 password" for it.
+
+## Request approval
+
+`requestApproval` is RustDesk 1.5.3's mode for connecting without a password:
+the login carries **no password from any source** — not the hash remembered in
+this browser, not `credentials.rememberedHash` or `credentials.password` (ignored
+when both are given) — and the remote user is asked to accept. It is **off by
+default**; then everything works as before, except that the password prompt gets
+a "Request approval" button. The button reconnects in this mode.
+
+- While waiting, the desktop shows "Waiting for the remote user to accept the
+  connection…" with a Cancel button; terminal and files show the same text in
+  place of the password field. There is no password dialog in this mode.
+- Declined, timed out after two minutes, a device that only allows passwords
+  ("The device does not accept connection requests without a password"), or a
+  link that dropped while waiting: an error with Reconnect, which asks again in
+  the same mode, never with a saved password. Nothing retries by itself.
+- A saved password or hash is left alone and "Remember password" does nothing:
+  nothing was proven, so there is no hash to store.
+- The files sheet and later connections opened from a session in this mode
+  request approval too.
+- The mode lives in the component. A host that handles `onReconnect` by
+  remounting `<RemoteDesktop>` itself has to pass `requestApproval` again.
 
 ## Desktop mode
 
