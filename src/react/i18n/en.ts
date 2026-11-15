@@ -229,6 +229,8 @@ export const en = {
     adminBadgeHint: "The shells of this session run under the device's own account.",
     images: "Draw inline images",
     imagesHint: "SIXEL and iTerm's protocol, as timg, chafa and some plotting tools emit them. Takes effect on the next connection, which also fetches the decoder. Not from a Windows device: its pseudoconsole drops such sequences before they leave the machine.",
+    osc52: "Let programs on the device copy to my clipboard",
+    osc52Hint: "OSC 52, as tmux and vim over SSH use it. Anything running in the shell can then replace what is on your clipboard, so turn it on only for devices you trust. Programs can never read your clipboard. Text over 16 MiB is ignored.",
     keepAlive: "Keep an idle session open",
     keepAliveHint: "Probes the connection every 10 s while nothing is typed or printed. A relay drops a connection that carries no traffic (the usual one after 30 s), which ends a terminal left sitting open. Takes effect on the next connection.",
     search: "Search",

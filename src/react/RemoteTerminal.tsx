@@ -16,6 +16,7 @@ import { Label } from "./ui/label.js";
 import { Checkbox } from "./ui/misc.js";
 import { isModifier, modifyText, TERMINAL_LAYOUT, terminalKey, type TermMods } from "./keys.js";
 import { attachInstantInput } from "./instantInput.js";
+import { osc52Handler } from "./osc52.js";
 import { closeAction, localShellStore, type SavedShells } from "./shellStore.js";
 import { cellAt, extendFrom, selectBetween, wordAt, type Cell } from "./touchSelect.js";
 import { useNoPullToRefresh, useVisualViewport } from "./viewport.js";
@@ -69,6 +70,11 @@ export interface TerminalPrefs {
   instantInput: boolean;
   /** Draw inline images (SIXEL and iTerm's protocol), as timg, chafa or a plotting tool emit them. */
   images: boolean;
+  /**
+   * Let programs on the device put text into this computer's clipboard (OSC 52),
+   * as tmux and vim over SSH do. Off by default; the device can never read the clipboard.
+   */
+  osc52Write: boolean;
 }
 
 const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
@@ -82,6 +88,7 @@ const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
   optionAsAlt: true,
   instantInput: true,
   images: true,
+  osc52Write: false,
 };
 
 function loadTerminalPrefs(storageKey: string): TerminalPrefs {
@@ -99,6 +106,7 @@ function loadTerminalPrefs(storageKey: string): TerminalPrefs {
       optionAsAlt: v.optionAsAlt !== false,
       instantInput: v.instantInput !== false,
       images: v.images !== false,
+      osc52Write: v.osc52Write === true,
     };
   } catch {
     return { ...DEFAULT_TERMINAL_PREFS };
@@ -368,6 +376,9 @@ export function RemoteTerminal(props: RemoteDesktopProps & { onReconnect: () => 
     term.loadAddon(new lib.Unicode11Addon());
     term.unicode.activeVersion = "11";
     term.loadAddon(fit);
+    // OSC 52 clipboard writes, only while the option is on; queries are always refused.
+    // Not from a reattached shell's replayed output: that is old, not a request made now.
+    term.parser.registerOscHandler(52, osc52Handler(() => prefsRef.current.osc52Write && !pane.replaying));
     // SIXEL and iTerm inline images (timg, chafa, plotting tools). Before open(),
     // and it draws under the WebGL renderer as well as the DOM one.
     if (lib.ImageAddon) {
@@ -1503,6 +1514,13 @@ function TerminalSettings({
             <span>
               {t("terminal.images")}
               <span className="block text-xs text-muted-foreground">{t("terminal.imagesHint")}</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox checked={draft.osc52Write} onCheckedChange={(v) => setDraft({ ...draft, osc52Write: v === true })} className="mt-0.5" />
+            <span>
+              {t("terminal.osc52")}
+              <span className="block text-xs text-muted-foreground">{t("terminal.osc52Hint")}</span>
             </span>
           </label>
           <label className="flex items-start gap-2 text-sm">

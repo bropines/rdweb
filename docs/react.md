@@ -367,6 +367,20 @@ of storage and 8 MB per image, after which the oldest ones become placeholders.
 Turning the setting on applies to the next connection, since the decoder loads
 with the session; reconnect a terminal that is already open.
 
+"Let programs on the device copy to my clipboard" is **off by default**
+(`osc52Write` in the terminal settings stored under `<storageKey>.terminal`).
+When it is on, `ESC ] 52 ; c ; <base64> BEL` (or ST), which tmux and vim over SSH
+emit, puts the decoded text on this computer's clipboard. It follows RustDesk's
+desktop terminal (1.5.0): the selection must be empty or name `c`, the base64
+and the UTF-8 must be valid, and text over 16 MiB is ignored (xterm.js itself
+drops an OSC payload over 10 MB before that); an empty payload is ignored rather than
+clearing the clipboard. The query form (`?`), which would let the device read
+the clipboard, is ignored always, with the option on or off. A browser that has
+no `navigator.clipboard`, or refuses the write (it wants the page focused and
+a recent user gesture), is dropped quietly. The option applies at once, and
+output replayed from a reattached shell never triggers a write. Turn it on only
+for devices you trust: anything running in the shell can replace your clipboard.
+
 **Not from a Windows device.** A shell there runs under a pseudoconsole, which
 RustDesk opens without `PSEUDOCONSOLE_PASSTHROUGH_MODE`: it parses the output
 into a text screen buffer and generates the stream afresh from it, and that

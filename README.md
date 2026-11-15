@@ -76,6 +76,8 @@ with WebCodecs. It is three things:
 - Inline images: SIXEL and iTerm's protocol, so `timg`, `chafa` and friends
   draw for real — on macOS and Linux devices; a Windows pseudoconsole drops
   such sequences before they leave the device.
+- Opt-in OSC 52: programs on the device (tmux, vim over SSH) can copy into your
+  clipboard. Off by default; they can never read it.
 
 **Files**
 
